@@ -21,7 +21,14 @@ func CreateWallet(userID int, cfg *config.Config) (*db.Wallet, error) {
 		return nil, fmt.Errorf("не удалось создать TonClient: %w", err)
 	}
 
-	w, err := tonClient.CreateWallet()
+	// Генерируем новую seed-фразу
+	seedPhrase, err := tonutils.GenerateSeedPhrase()
+	if err != nil {
+		log.Printf("Ошибка при генерации seed-фразы: %v", err)
+		return nil, fmt.Errorf("не удалось сгенерировать seed-фразу: %w", err)
+	}
+
+	w, err := tonClient.CreateWallet(seedPhrase)
 	if err != nil {
 		log.Printf("Ошибка при создании кошелька: %v", err)
 		return nil, fmt.Errorf("не удалось создать кошелек: %w", err)
@@ -46,6 +53,19 @@ func CreateWallet(userID int, cfg *config.Config) (*db.Wallet, error) {
 
 	log.Printf("Создан новый кошелек для пользователя %d: %s", userID, w.Address)
 	return wallet, nil
+}
+
+// Функция для генерации seed-фразы
+func generateSeedPhrase() (string, error) {
+	// Здесь должна быть реализация генерации seed-фразы
+	// Например, можно использовать библиотеку bip39 для этого
+	// Пример:
+	// entropy, _ := bip39.NewEntropy(256)
+	// mnemonic, _ := bip39.NewMnemonic(entropy)
+	// return mnemonic, nil
+
+	// Временная заглушка:
+	return "example seed phrase for testing purposes only", nil
 }
 
 func GetWalletByUserID(userID int) (*db.Wallet, error) {
@@ -120,7 +140,7 @@ func CheckSuspiciousActivity(wallet *db.Wallet, amount string) bool {
 	return sendAmount > threshold
 }
 
-func SendTON(userID int, toAddress string, amount string, cfg *config.Config) error {
+func SendTON(userID int, toAddress string, amount string, comment string, cfg *config.Config) error {
 	if err := ValidateAddress(toAddress); err != nil {
 		return err
 	}
@@ -158,7 +178,7 @@ func SendTON(userID int, toAddress string, amount string, cfg *config.Config) er
 	}
 
 	err = utils.Retry(3, time.Second, func() error {
-		return tonClient.SendTransaction(privateKey, toAddress, amount)
+		return tonClient.SendTransaction(privateKey, toAddress, amount, comment)
 	})
 
 	if err != nil {

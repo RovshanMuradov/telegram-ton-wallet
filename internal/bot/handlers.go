@@ -85,7 +85,9 @@ func (b *Bot) handleSend(m *telebot.Message) {
 		}
 
 		userID := int(c.Sender.ID)
-		err := wallet.SendTON(userID, recipientAddress, amount, b.config)
+		comment := "" // Здесь вы можете добавить логику для получения комментария, если это необходимо
+
+		err := wallet.SendTON(userID, recipientAddress, amount, comment, b.config)
 		if err != nil {
 			b.telegramBot.Send(c.Sender, fmt.Sprintf("Ошибка при отправке транзакции: %v", err))
 			return
