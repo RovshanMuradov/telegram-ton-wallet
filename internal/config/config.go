@@ -2,7 +2,11 @@
 package config
 
 import (
-	"github.com/spf13/viper"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -10,21 +14,26 @@ type Config struct {
 	TonAPIKey     string
 	DatabaseURL   string
 	EncryptionKey string
+	TonConfigURL  string
 }
 
 func LoadConfig() (*Config, error) {
-	viper.SetConfigFile(".env")
-	viper.AutomaticEnv()
-
-	if err := viper.ReadInConfig(); err != nil {
-		return nil, err
+	err := godotenv.Load()
+	if err != nil {
+		log.Printf("Warning: .env file not found in current directory")
 	}
 
 	config := &Config{
-		TelegramToken: viper.GetString("TELEGRAM_TOKEN"),
-		TonAPIKey:     viper.GetString("TON_API_KEY"),
-		DatabaseURL:   viper.GetString("DATABASE_URL"),
-		EncryptionKey: viper.GetString("ENCRYPTION_KEY"),
+		TelegramToken: os.Getenv("TELEGRAM_TOKEN"),
+		TonAPIKey:     os.Getenv("TON_API_KEY"),
+		DatabaseURL:   os.Getenv("DATABASE_URL"),
+		EncryptionKey: os.Getenv("ENCRYPTION_KEY"),
+		TonConfigURL:  os.Getenv("TON_CONFIG_URL"),
+	}
+
+	// Проверка обязательных переменных
+	if config.TonConfigURL == "" {
+		return nil, fmt.Errorf("TON_CONFIG_URL is not set")
 	}
 
 	return config, nil

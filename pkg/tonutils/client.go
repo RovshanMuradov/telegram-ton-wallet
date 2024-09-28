@@ -3,12 +3,12 @@ package tonutils
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"strings"
 	"time"
 
+	"github.com/rovshanmuradov/telegram-ton-wallet/internal/config"
 	"github.com/tyler-smith/go-bip39"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/liteclient"
@@ -23,12 +23,11 @@ type TonClient struct {
 	api    *ton.APIClient
 }
 
-func NewTonClient(apiKey string) (*TonClient, error) {
+func NewTonClient(cfg *config.Config) (*TonClient, error) {
 	ctx := context.Background()
 	client := liteclient.NewConnectionPool()
 
-	// Настройка клиента для подключения к TON сети
-	err := client.AddConnection(ctx, "https://ton.org/api/v2/jsonRPC", apiKey)
+	err := client.AddConnectionsFromConfigUrl(ctx, cfg.TonConfigURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add connection: %w", err)
 	}
@@ -43,17 +42,18 @@ func NewTonClient(apiKey string) (*TonClient, error) {
 }
 
 func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
-	// Разделение seed-фразы на слова
-	seedWords := strings.Split(seedPhrase, " ")
+	// Используем wallet.NewSeed() вместо предоставленной seed-фразы
+	seed := wallet.NewSeed()
 
-	// Создание кошелька из seed-фразы
-	w, err := wallet.FromSeed(c.api, seedWords, wallet.V3R2)
+	w, err := wallet.FromSeed(c.api, seed, wallet.V3R2)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create wallet from seed: %w", err)
+		return nil, fmt.Errorf("failed to create wallet from seed: %w (seed words: %v)", err, seed)
 	}
 
-	// Получение адреса кошелька
 	address := w.Address()
+
+	// Преобразуем seed в строку для сохранения
+	seedPhrase = strings.Join(seed, " ")
 
 	return &Wallet{
 		Address:    address.String(),
@@ -61,18 +61,20 @@ func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
 	}, nil
 }
 
-// Добавьте эту функцию в пакет tonutils (файл client.go)
 func GenerateSeedPhrase() (string, error) {
-	// Генерируем 256 бит энтропии (32 байта)
 	entropy, err := bip39.NewEntropy(256)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate entropy: %w", err)
 	}
 
-	// Создаем мнемоническую фразу из энтропии
 	mnemonic, err := bip39.NewMnemonic(entropy)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate mnemonic: %w", err)
+	}
+
+	words := strings.Split(mnemonic, " ")
+	if len(words) != 24 {
+		return "", fmt.Errorf("generated mnemonic has invalid length: expected 24 words, got %d", len(words))
 	}
 
 	return mnemonic, nil
@@ -208,14 +210,6 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 	// Отправка транзакции с контекстом
 	err = w.Transfer(ctx, to, coins, comment, true)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return fmt.Errorf("transaction send timeout: %w", err)
-		}
-		// Проверка на специфичные ошибки TON
-		if strings.Contains(err.Error(), "account not initialized") {
-			return fmt.Errorf("recipient account not initialized: %w", err)
-		}
-		// Добавьте здесь другие специфичные проверки ошибок TON
 		return fmt.Errorf("failed to send transaction: %w", err)
 	}
 

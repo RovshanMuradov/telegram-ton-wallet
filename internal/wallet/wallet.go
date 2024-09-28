@@ -12,32 +12,39 @@ import (
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/db"
 	"github.com/rovshanmuradov/telegram-ton-wallet/pkg/tonutils"
 	"github.com/rovshanmuradov/telegram-ton-wallet/pkg/utils"
+	"github.com/tyler-smith/go-bip39"
+	"gorm.io/gorm"
 )
 
 func CreateWallet(userID int, cfg *config.Config) (*db.Wallet, error) {
 	log.Printf("Начало создания кошелька для пользователя %d", userID)
 
-	tonClient, err := tonutils.NewTonClient(cfg.TonAPIKey)
+	tonClient, err := tonutils.NewTonClient(cfg)
 	if err != nil {
 		log.Printf("Ошибка при создании TonClient: %v", err)
 		return nil, fmt.Errorf("не удалось создать TonClient: %w", err)
 	}
 	log.Printf("TonClient успешно создан")
 
-	// Генерируем новую seed-фразу
 	seedPhrase, err := tonutils.GenerateSeedPhrase()
 	if err != nil {
 		log.Printf("Ошибка при генерации seed-фразы: %v", err)
 		return nil, fmt.Errorf("не удалось сгенерировать seed-фразу: %w", err)
 	}
-	log.Printf("Seed-фраза успешно сгенерирована")
+	log.Printf("Seed-фраза успешно сгенерирована: %s", seedPhrase)
 
-	w, err := tonClient.CreateWallet(seedPhrase)
+	// Добавим проверку seed-фразы
+	if !bip39.IsMnemonicValid(seedPhrase) {
+		log.Printf("Сгенерированная seed-фраза недействительна")
+		return nil, fmt.Errorf("сгенерированная seed-фраза недействительна")
+	}
+
+	w, err := tonClient.CreateWallet("")
 	if err != nil {
 		log.Printf("Ошибка при создании кошелька: %v", err)
 		return nil, fmt.Errorf("не удалось создать кошелек: %w", err)
 	}
-	log.Printf("Кошелек успешно создан в TON")
+	log.Printf("Кошелек успешно создан в TON с адресом: %s", w.Address)
 
 	encryptedPrivateKey, err := EncryptPrivateKey(w.PrivateKey, cfg.EncryptionKey)
 	if err != nil {
@@ -52,9 +59,16 @@ func CreateWallet(userID int, cfg *config.Config) (*db.Wallet, error) {
 		PrivateKey: encryptedPrivateKey,
 	}
 
-	if err := db.DB.Create(wallet).Error; err != nil {
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(wallet).Error; err != nil {
+			return fmt.Errorf("не удалось сохранить кошелек в базу данных: %w", err)
+		}
+		return nil
+	})
+
+	if err != nil {
 		log.Printf("Ошибка при сохранении кошелька в базу данных: %v", err)
-		return nil, fmt.Errorf("не удалось сохранить кошелек в базу данных: %w", err)
+		return nil, err
 	}
 
 	log.Printf("Создан новый кошелек для пользователя %d: %s", userID, w.Address)
@@ -70,7 +84,7 @@ func GetWalletByUserID(userID int) (*db.Wallet, error) {
 }
 
 func GetBalance(address string, cfg *config.Config) (string, error) {
-	tonClient, err := tonutils.NewTonClient(cfg.TonAPIKey)
+	tonClient, err := tonutils.NewTonClient(cfg)
 	if err != nil {
 		log.Printf("Ошибка при создании TonClient: %v", err)
 		return "", fmt.Errorf("не удалось создать TonClient: %w", err)
@@ -164,7 +178,7 @@ func SendTON(userID int, toAddress string, amount string, comment string, cfg *c
 		return fmt.Errorf("не удалось расшифровать приватный ключ: %w", err)
 	}
 
-	tonClient, err := tonutils.NewTonClient(cfg.TonAPIKey)
+	tonClient, err := tonutils.NewTonClient(cfg)
 	if err != nil {
 		log.Printf("Ошибка при создании TonClient: %v", err)
 		return fmt.Errorf("не удалось создать TonClient: %w", err)
@@ -200,7 +214,7 @@ func GetTransactionHistory(wallet *db.Wallet, cfg *config.Config) ([]db.Transact
 }
 
 func RecoverWallet(userID int, seedPhrase string, cfg *config.Config) (*db.Wallet, error) {
-	tonClient, err := tonutils.NewTonClient(cfg.TonAPIKey)
+	tonClient, err := tonutils.NewTonClient(cfg)
 	if err != nil {
 		log.Printf("Ошибка при создании TonClient: %v", err)
 		return nil, fmt.Errorf("не удалось создать TonClient: %w", err)
