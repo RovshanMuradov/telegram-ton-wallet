@@ -4,14 +4,14 @@ package db
 import "time"
 
 type User struct {
-	ID         int `gorm:"primary_key"`
-	TelegramID int
+	ID         int64 `gorm:"primary_key"`
+	TelegramID int64
 	Wallets    []Wallet
 }
 
 type Wallet struct {
-	ID         int `gorm:"primary_key"`
-	UserID     int
+	ID         int64 `gorm:"primary_key"`
+	UserID     int64
 	Address    string
 	PrivateKey string
 	Balance    string
