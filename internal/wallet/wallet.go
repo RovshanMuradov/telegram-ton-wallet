@@ -15,11 +15,14 @@ import (
 )
 
 func CreateWallet(userID int, cfg *config.Config) (*db.Wallet, error) {
+	log.Printf("Начало создания кошелька для пользователя %d", userID)
+
 	tonClient, err := tonutils.NewTonClient(cfg.TonAPIKey)
 	if err != nil {
 		log.Printf("Ошибка при создании TonClient: %v", err)
 		return nil, fmt.Errorf("не удалось создать TonClient: %w", err)
 	}
+	log.Printf("TonClient успешно создан")
 
 	// Генерируем новую seed-фразу
 	seedPhrase, err := tonutils.GenerateSeedPhrase()
@@ -27,18 +30,21 @@ func CreateWallet(userID int, cfg *config.Config) (*db.Wallet, error) {
 		log.Printf("Ошибка при генерации seed-фразы: %v", err)
 		return nil, fmt.Errorf("не удалось сгенерировать seed-фразу: %w", err)
 	}
+	log.Printf("Seed-фраза успешно сгенерирована")
 
 	w, err := tonClient.CreateWallet(seedPhrase)
 	if err != nil {
 		log.Printf("Ошибка при создании кошелька: %v", err)
 		return nil, fmt.Errorf("не удалось создать кошелек: %w", err)
 	}
+	log.Printf("Кошелек успешно создан в TON")
 
 	encryptedPrivateKey, err := EncryptPrivateKey(w.PrivateKey, cfg.EncryptionKey)
 	if err != nil {
 		log.Printf("Ошибка при шифровании приватного ключа: %v", err)
 		return nil, fmt.Errorf("не удалось зашифровать приватный ключ: %w", err)
 	}
+	log.Printf("Приватный ключ успешно зашифрован")
 
 	wallet := &db.Wallet{
 		UserID:     userID,
@@ -53,19 +59,6 @@ func CreateWallet(userID int, cfg *config.Config) (*db.Wallet, error) {
 
 	log.Printf("Создан новый кошелек для пользователя %d: %s", userID, w.Address)
 	return wallet, nil
-}
-
-// Функция для генерации seed-фразы
-func generateSeedPhrase() (string, error) {
-	// Здесь должна быть реализация генерации seed-фразы
-	// Например, можно использовать библиотеку bip39 для этого
-	// Пример:
-	// entropy, _ := bip39.NewEntropy(256)
-	// mnemonic, _ := bip39.NewMnemonic(entropy)
-	// return mnemonic, nil
-
-	// Временная заглушка:
-	return "example seed phrase for testing purposes only", nil
 }
 
 func GetWalletByUserID(userID int) (*db.Wallet, error) {

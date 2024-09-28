@@ -1,3 +1,5 @@
-.env.example
+.env
 internal/wallet/encryption.go
 internal/wallet/tests
+docker-compose.yml
+migrations

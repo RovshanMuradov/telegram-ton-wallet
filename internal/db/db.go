@@ -1,24 +1,41 @@
+// internal/db/db.go
 package db
 
 import (
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/postgres"
+	"fmt"
+	"log"
+	"time"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 var DB *gorm.DB
 
 func Init(databaseURL string) error {
-	db, err := gorm.Open("postgres", databaseURL)
-	if err != nil {
-		return err
+	var err error
+	var sqlDB *gorm.DB
+
+	for i := 0; i < 30; i++ {
+		sqlDB, err = gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+		if err == nil {
+			break
+		}
+		log.Printf("Попытка подключения к базе данных %d/30: %v", i+1, err)
+		time.Sleep(time.Second * 2)
 	}
 
-	DB = db
+	if err != nil {
+		return fmt.Errorf("не удалось подключиться к базе данных после 30 попыток: %w", err)
+	}
+
+	DB = sqlDB
 	return nil
 }
 
 func Close() {
 	if DB != nil {
-		DB.Close()
+		sqlDB, _ := DB.DB()
+		sqlDB.Close()
 	}
 }

@@ -1,3 +1,4 @@
+// internal/db/models.go
 package db
 
 import "time"

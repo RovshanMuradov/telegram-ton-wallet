@@ -5,6 +5,9 @@
 - [ ] Add error handling for Telegram bot commands
 
 ## 🛠 Medium Priority Tasks
+- [ ] Дописать GenerateSeedPhrase() в client.go 
+- [ ] Дописать generateSeedPhrase в wallet.go
+
 - [ ] Test TON wallet balance fetching
 - [ ] Optimize Redis usage for session management
 

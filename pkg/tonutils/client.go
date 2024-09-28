@@ -1,3 +1,4 @@
+// pkt/tonutils/client.go
 package tonutils
 
 import (
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tyler-smith/go-bip39"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/tlb"
@@ -61,20 +63,19 @@ func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
 
 // Добавьте эту функцию в пакет tonutils (файл client.go)
 func GenerateSeedPhrase() (string, error) {
-	// Здесь должна быть реализация генерации seed-фразы
-	// Пример с использованием библиотеки bip39:
-	// entropy, err := bip39.NewEntropy(256)
-	// if err != nil {
-	//     return "", fmt.Errorf("failed to generate entropy: %w", err)
-	// }
-	// mnemonic, err := bip39.NewMnemonic(entropy)
-	// if err != nil {
-	//     return "", fmt.Errorf("failed to generate mnemonic: %w", err)
-	// }
-	// return mnemonic, nil
+	// Генерируем 256 бит энтропии (32 байта)
+	entropy, err := bip39.NewEntropy(256)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate entropy: %w", err)
+	}
 
-	// Временная заглушка:
-	return "example seed phrase for testing purposes only", nil
+	// Создаем мнемоническую фразу из энтропии
+	mnemonic, err := bip39.NewMnemonic(entropy)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate mnemonic: %w", err)
+	}
+
+	return mnemonic, nil
 }
 
 func (c *TonClient) GetBalance(addressStr string) (string, error) {

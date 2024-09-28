@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/wallet"
@@ -37,6 +38,7 @@ func (b *Bot) handleCreateWallet(m *telebot.Message) {
 	userID := int(m.Sender.ID) // Преобразование int64 в int
 	w, err := wallet.CreateWallet(userID, b.config)
 	if err != nil {
+		log.Printf("Ошибка при создании кошелька для пользователя %d: %v", userID, err)
 		b.telegramBot.Send(m.Sender, fmt.Sprintf("Ошибка при создании кошелька: %v", err))
 		return
 	}

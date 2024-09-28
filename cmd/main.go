@@ -3,6 +3,10 @@ package main
 
 import (
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/bot"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/config"
@@ -20,6 +24,9 @@ func main() {
 		log.Fatalf("Ошибка загрузки конфигурации: %v", err)
 	}
 
+	// Добавляем небольшую задержку перед инициализацией базы данных
+	time.Sleep(time.Second * 5)
+
 	// Инициализация базы данных
 	err = db.Init(cfg.DatabaseURL)
 	if err != nil {
@@ -34,4 +41,11 @@ func main() {
 	}
 
 	b.Start()
+
+	// Ожидание сигнала для завершения
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	<-c
+
+	log.Println("Завершение работы...")
 }
