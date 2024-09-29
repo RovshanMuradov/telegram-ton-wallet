@@ -44,10 +44,10 @@ func NewTonClient(cfg *config.Config) (*TonClient, error) {
 func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
 	var seed []string
 	if seedPhrase == "" {
-		// Если seed-фраза не предоставлена, генерируем новую
+		// If seed phrase is not provided, generate a new one
 		seed = wallet.NewSeed()
 	} else {
-		// Используем предоставленную seed-фразу
+		// Use the provided seed phrase
 		seed = strings.Split(seedPhrase, " ")
 	}
 
@@ -58,7 +58,7 @@ func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
 
 	address := w.Address()
 
-	// Используем окончательную seed-фразу
+	// Use the final seed phrase
 	finalSeedPhrase := strings.Join(seed, " ")
 
 	return &Wallet{
@@ -109,17 +109,17 @@ func (c *TonClient) GetBalance(addressStr string) (string, error) {
 	return "0", nil
 }
 
-// Более гибкая и потенциально более точная, но сложнее в реализации и поддержке.
-// Она лучше подходит для проектов, где важна точность оценки комиссий и где комиссии могут значительно варьироваться в зависимости от типа транзакции.
+// More flexible and potentially more accurate, but more complex to implement and maintain.
+// It's better suited for projects where fee estimation accuracy is important and where fees can vary significantly depending on the transaction type.
 func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *big.Int) (*big.Int, error) {
-	// Константы для приблизительной оценки (в наноTON)
+	// Constants for approximate estimation (in nanoTON)
 	const (
 		baseStorageFee = 10000000 // 0.01 TON
 		baseComputeFee = 10000000 // 0.01 TON
 		gasPerByte     = 1000     // 0.000001 TON per byte
 	)
 
-	// Парсинг адресов
+	// Parsing addresses
 	_, err := address.ParseAddr(fromAddress)
 	if err != nil {
 		return nil, fmt.Errorf("invalid sender address: %w", err)
@@ -129,10 +129,10 @@ func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *b
 		return nil, fmt.Errorf("invalid recipient address: %w", err)
 	}
 
-	// Оценка размера сообщения (приблизительно)
+	// Estimating message size (approximately)
 	messageSize := 100 + (amount.BitLen() / 8)
 
-	// Расчет приблизительной комиссии
+	// Calculating approximate fee
 	gasFee := new(big.Int).SetUint64(uint64(messageSize) * gasPerByte)
 	totalFee := new(big.Int).Add(
 		new(big.Int).SetUint64(baseStorageFee+baseComputeFee),
@@ -142,34 +142,34 @@ func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *b
 	return totalFee, nil
 }
 
-// Проще, быстрее, но менее точная.
-// Она может подойти для проектов, где скорость работы важнее точности оценки комиссий, или где комиссии относительно стабильны и предсказуемы.
+// Simpler, faster, but less accurate.
+// It may be suitable for projects where speed is more important than fee estimation accuracy, or where fees are relatively stable and predictable.
 /*func (c *TonClient) EstimateFees(fromSeedPhrase string, toAddress string, amount *big.Int) (*big.Int, error) {
-	// Парсинг адреса получателя
+	// Parsing recipient address
 	toAddr, err := address.ParseAddr(toAddress)
 	if err != nil {
 		return nil, fmt.Errorf("invalid recipient address: %w", err)
 	}
 
-	// Разделение seed-фразы на слова
+	// Splitting seed phrase into words
 	seedWords := strings.Split(fromSeedPhrase, " ")
 
-	// Создание кошелька из seed-фразы
+	// Creating wallet from seed phrase
 	w, err := wallet.FromSeed(c.api, seedWords, wallet.V3R2)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create wallet from seed: %w", err)
 	}
 
-	// Преобразование суммы в tlb.Coins
-	coins := tlb.MustFromTON(amount.String()) // Используем функцию для создания Coins
+	// Converting amount to tlb.Coins
+	coins := tlb.MustFromTON(amount.String()) // Using function to create Coins
 
-	// Построение сообщения для транзакции
+	// Building transaction message
 	_, err = w.BuildTransfer(toAddr, coins, true, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to build transfer message: %w", err)
 	}
 
-	// Использование фиксированной комиссии
+	// Using fixed fee
 	fixedFee := big.NewInt(10000000) // 0.01 TON
 
 	return fixedFee, nil
@@ -177,30 +177,30 @@ func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *b
 */
 
 func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount string, comment string) error {
-	// Создание дочернего контекста с тайм-аутом
+	// Creating child context with timeout
 	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Minute)
 	defer cancel()
 
-	// Парсинг адреса получателя
+	// Parsing recipient address
 	to, err := address.ParseAddr(toAddress)
 	if err != nil {
 		return fmt.Errorf("invalid recipient address: %w", err)
 	}
 
-	// Парсинг суммы
+	// Parsing amount
 	coins, err := tlb.FromTON(amount)
 	if err != nil {
 		return fmt.Errorf("invalid amount: %w", err)
 	}
 
-	// Создание кошелька из seed-фразы
+	// Creating wallet from seed phrase
 	seedWords := strings.Split(privateKey, " ")
 	w, err := wallet.FromSeed(c.api, seedWords, wallet.V3R2)
 	if err != nil {
 		return fmt.Errorf("failed to create wallet from seed: %w", err)
 	}
 
-	// Проверка достаточности баланса
+	// Checking balance sufficiency
 	balance, err := c.GetBalance(w.Address().String())
 	if err != nil {
 		return fmt.Errorf("failed to get balance: %w", err)
@@ -213,7 +213,7 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 		return fmt.Errorf("insufficient balance for transaction")
 	}
 
-	// Отправка транзакции с контекстом
+	// Sending transaction with context
 	err = w.Transfer(ctx, to, coins, comment, true)
 	if err != nil {
 		return fmt.Errorf("failed to send transaction: %w", err)
@@ -237,5 +237,5 @@ func (c *TonClient) RecoverWalletFromSeed(seedPhrase string) (*Wallet, error) {
 
 type Wallet struct {
 	Address    string
-	PrivateKey string // В данном случае это seed-фраза
+	PrivateKey string // In this case, it's the seed phrase
 }
