@@ -1,57 +1,57 @@
-# TODO List для улучшения Telegram TON Wallet Bot
+# TODO List for improving Telegram TON Wallet Bot
 
-## 1. Управление кошельком
-- [] Ограничить создание кошелька до одного на пользователя
-  - [ ] Изменить логику команды /create_wallet
-  - [ ] Добавить проверку существования кошелька
-  - [ ] Реализовать вывод информации о существующем кошельке при повторном запросе
+## 1. Wallet Management
+  - [ ] Limit wallet creation to one per user
+  - [ ] Modify the logic of the /create_wallet command
+  - [ ] Add a check for existing wallet
+  - [ ] Implement display of existing wallet information on repeated request
 
-## 2. Проверки и валидация
-- [ ] Добавить проверку наличия кошелька перед выполнением команд
-  - [ ] Реализовать для /balance
-  - [ ] Реализовать для /send
-  - [ ] Реализовать для /receive
-  - [ ] Реализовать для /history
-- [ ] Улучшить обработку ошибок ввода
-  - [ ] Добавить валидацию формата адреса и суммы при отправке
-  - [ ] Реализовать информативные сообщения об ошибках
+## 2. Checks and Validation
+- [ ] Add wallet existence check before executing commands
+  - [ ] Implement for /balance
+  - [ ] Implement for /send
+  - [ ] Implement for /receive
+  - [ ] Implement for /history
+- [ ] Improve input error handling
+  - [ ] Add validation for address format and amount when sending
+  - [ ] Implement informative error messages
 
-## 3. Улучшение процесса отправки транзакций
-- [ ] Добавить этап подтверждения транзакции
-- [ ] Реализовать проверку достаточности баланса перед отправкой
-- [ ] Добавить расчет и отображение комиссий за транзакцию
-- [ ] Реализовать функцию отслеживания статуса транзакции
-- [ ] Добавить уведомления пользователя о статусе транзакции
+## 3. Improving Transaction Sending Process
+- [ ] Add transaction confirmation step
+- [ ] Implement balance sufficiency check before sending
+- [ ] Add calculation and display of transaction fees
+- [ ] Implement transaction status tracking function
+- [ ] Add user notifications about transaction status
 
-## 4. Оптимизация работы с блокчейном
-- [ ] Реализовать кэширование баланса
-  - [ ] Добавить периодическое обновление кэшированного баланса
-  - [ ] Оптимизировать запросы к блокчейну
+## 4. Optimizing Blockchain Interaction
+- [ ] Implement balance caching
+  - [ ] Add periodic updating of cached balance
+  - [ ] Optimize blockchain queries
 
-## 5. Безопасность и восстановление
-- [ ] Разработать механизм резервного копирования кошелька
-- [ ] Реализовать функцию восстановления кошелька
-- [ ] Добавить дополнительные меры безопасности (например, подтверждение действий)
+## 5. Security and Recovery
+- [ ] Develop wallet backup mechanism
+- [ ] Implement wallet recovery function
+- [ ] Add additional security measures (e.g., action confirmation)
 
-## 6. Защита от спама и злоупотреблений
-- [ ] Реализовать ограничение на частоту использования команд
-- [ ] Добавить систему временных блокировок при подозрительной активности
+## 6. Spam and Abuse Protection
+- [ ] Implement rate limiting for command usage
+- [ ] Add system of temporary blocks for suspicious activity
 
-## 7. Улучшение пользовательского опыта
-- [ ] Добавить более подробные описания команд в /help
-- [ ] Реализовать интерактивные кнопки для часто используемых функций
-- [ ] Добавить возможность настройки уведомлений (например, о крупных транзакциях)
+## 7. Improving User Experience
+- [ ] Add more detailed command descriptions in /help
+- [ ] Implement interactive buttons for frequently used functions
+- [ ] Add ability to customize notifications (e.g., for large transactions)
 
-## 8. Расширение функциональности
-- [ ] Добавить поддержку нескольких валют (если применимо)
-- [ ] Реализовать функцию обмена валют (если применимо)
-- [ ] Добавить отображение истории цен TON
+## 8. Expanding Functionality
+- [ ] Add support for multiple currencies (if applicable)
+- [ ] Implement currency exchange function (if applicable)
+- [ ] Add display of TON price history
 
-## 9. Тестирование и отладка
-- [ ] Разработать комплексный набор тестов для всех функций
-- [ ] Провести нагрузочное тестирование
-- [ ] Реализовать систему логирования для отслеживания ошибок и поведения пользователей
+## 9. Testing and Debugging
+- [ ] Develop comprehensive test suite for all functions
+- [ ] Conduct load testing
+- [ ] Implement logging system for tracking errors and user behavior
 
-## 10. Документация
-- [ ] Обновить документацию по API и внутренней структуре проекта
-- [ ] Создать руководство пользователя с описанием всех функций бота
+## 10. Documentation
+- [ ] Update documentation for API and internal project structure
+- [ ] Create user guide with description of all bot functions
