@@ -34,7 +34,7 @@ func CreateWallet(userID int64, cfg *config.Config) (*db.Wallet, error) {
 			}
 		}
 
-		// Создание кошелька (ваш существующий код)
+		// Создание кошелька
 		tonClient, err := tonutils.NewTonClient(cfg)
 		if err != nil {
 			return fmt.Errorf("не удалось создать TonClient: %w", err)
@@ -50,6 +50,7 @@ func CreateWallet(userID int64, cfg *config.Config) (*db.Wallet, error) {
 			return fmt.Errorf("не удалось зашифровать приватный ключ: %w", err)
 		}
 
+		log.Printf("user.ID: %d, userID: %d", user.ID, userID)
 		wallet = &db.Wallet{
 			UserID:     user.ID,
 			Address:    w.Address,
@@ -57,7 +58,16 @@ func CreateWallet(userID int64, cfg *config.Config) (*db.Wallet, error) {
 		}
 
 		if err := tx.Create(wallet).Error; err != nil {
+			log.Printf("Ошибка при сохранении кошелька в БД: %v", err)
 			return fmt.Errorf("не удалось сохранить кошелек в базу данных: %w", err)
+		}
+
+		// Проверка, что кошелек действительно сохранен
+		var count int64
+		if err := tx.Model(&db.Wallet{}).Where("user_id = ?", user.ID).Count(&count).Error; err != nil {
+			log.Printf("Ошибка при проверке наличия кошелька: %v", err)
+		} else {
+			log.Printf("Количество кошельков для пользователя %d после создания: %d", user.ID, count)
 		}
 
 		return nil
@@ -67,15 +77,34 @@ func CreateWallet(userID int64, cfg *config.Config) (*db.Wallet, error) {
 		return nil, fmt.Errorf("ошибка при создании кошелька: %w", err)
 	}
 
+	// Проверка после транзакции
+	var savedWallet db.Wallet
+	if err := db.DB.Where("user_id = ?", wallet.UserID).First(&savedWallet).Error; err != nil {
+		log.Printf("Ошибка при проверке сохраненного кошелька: %v", err)
+	} else {
+		log.Printf("Сохраненный кошелек: %+v", savedWallet)
+	}
+
 	log.Printf("Кошелек успешно создан для пользователя %d с адресом %s", userID, wallet.Address)
 	return wallet, nil
 }
 
 func GetWalletByUserID(userID int64) (*db.Wallet, error) {
-	var wallet db.Wallet
-	if err := db.DB.Where("user_id = ?", userID).First(&wallet).Error; err != nil {
+	log.Printf("Попытка получить кошелек для пользователя %d", userID)
+
+	var user db.User
+	if err := db.DB.Where("telegram_id = ?", userID).First(&user).Error; err != nil {
+		log.Printf("Ошибка при поиске пользователя: %v", err)
 		return nil, err
 	}
+
+	var wallet db.Wallet
+	if err := db.DB.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		log.Printf("Ошибка при получении кошелька для пользователя %d: %v", userID, err)
+		return nil, err
+	}
+
+	log.Printf("Кошелек успешно получен для пользователя %d: %+v", userID, wallet)
 	return &wallet, nil
 }
 
