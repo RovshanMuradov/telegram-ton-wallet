@@ -30,6 +30,6 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 
 func (b *Bot) Start() {
 	b.registerHandlers()
-	log.Println("Бот запущен")
+	log.Println("The bot has been launched")
 	b.telegramBot.Start()
 }

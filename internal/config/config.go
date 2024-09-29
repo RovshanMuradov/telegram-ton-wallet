@@ -31,7 +31,6 @@ func LoadConfig() (*Config, error) {
 		TonConfigURL:  os.Getenv("TON_CONFIG_URL"),
 	}
 
-	// Проверка обязательных переменных
 	if config.TonConfigURL == "" {
 		return nil, fmt.Errorf("TON_CONFIG_URL is not set")
 	}

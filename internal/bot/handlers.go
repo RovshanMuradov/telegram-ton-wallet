@@ -16,63 +16,63 @@ func (b *Bot) registerHandlers() {
 	b.telegramBot.Handle("/send", b.handleSend)
 	b.telegramBot.Handle("/receive", b.handleReceive)
 	b.telegramBot.Handle("/help", b.handleHelp)
-	b.telegramBot.Handle("/history", b.handleHistory) // Новая команда
+	b.telegramBot.Handle("/history", b.handleHistory)
 }
 
 func (b *Bot) handleStart(m *telebot.Message) {
-	b.telegramBot.Send(m.Sender, "Добро пожаловать в TON кошелек! Используйте /help для просмотра доступных команд.")
+	b.telegramBot.Send(m.Sender, "Welcome to TON wallet! Use /help to view available commands.")
 }
 
 func (b *Bot) handleHelp(m *telebot.Message) {
-	helpText := `/start - Начало работы с ботом
-/create_wallet - Создание нового кошелька
-/balance - Проверка баланса
-/send - Отправка TON
-/receive - Получение адреса для пополнения
-/history - История транзакций
-/help - Справка по командам`
+	helpText := `/start - Start working with the bot
+/create_wallet - Create a new wallet
+/balance - Check balance
+/send - Send TON
+/receive - Get address for top-up
+/history - Transaction history
+/help - Command reference`
 	b.telegramBot.Send(m.Sender, helpText)
 }
 
 func (b *Bot) handleCreateWallet(m *telebot.Message) {
-	userID := int64(m.Sender.ID) // Преобразование int64 в int
+	userID := int64(m.Sender.ID)
 	w, err := wallet.CreateWallet(userID, b.config)
 	if err != nil {
-		log.Printf("Ошибка при создании кошелька для пользователя %d: %v", userID, err)
-		b.telegramBot.Send(m.Sender, fmt.Sprintf("Ошибка при создании кошелька: %v", err))
+		log.Printf("Error creating wallet for user %d: %v", userID, err)
+		b.telegramBot.Send(m.Sender, fmt.Sprintf("Error creating wallet: %v", err))
 		return
 	}
 
-	b.telegramBot.Send(m.Sender, fmt.Sprintf("Ваш кошелек успешно создан!\nАдрес: %s", w.Address))
+	b.telegramBot.Send(m.Sender, fmt.Sprintf("Your wallet has been successfully created!\nAddress: %s", w.Address))
 }
 
 func (b *Bot) handleBalance(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
-	log.Printf("Запрос баланса для пользователя %d", userID)
+	log.Printf("Balance request for user %d", userID)
 
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
-		log.Printf("Ошибка при получении кошелька для пользователя %d: %v", userID, err)
-		b.telegramBot.Send(m.Sender, "Кошелек не найден. Создайте его с помощью /create_wallet.")
+		log.Printf("Error getting wallet for user %d: %v", userID, err)
+		b.telegramBot.Send(m.Sender, "Wallet not found. Create it using /create_wallet.")
 		return
 	}
 
 	balance, err := wallet.GetBalance(w.Address, b.config)
 	if err != nil {
-		b.telegramBot.Send(m.Sender, fmt.Sprintf("Ошибка при получении баланса: %v", err))
+		b.telegramBot.Send(m.Sender, fmt.Sprintf("Error getting balance: %v", err))
 		return
 	}
 
-	b.telegramBot.Send(m.Sender, fmt.Sprintf("Ваш баланс: %s TON", balance))
+	b.telegramBot.Send(m.Sender, fmt.Sprintf("Your balance: %s TON", balance))
 }
 
 func (b *Bot) handleSend(m *telebot.Message) {
-	b.telegramBot.Send(m.Sender, "Пожалуйста, введите адрес получателя и сумму через пробел (например: EQAbcdefghijklmnopqrstuvwxyz1234567890abcdefghij 1.5):")
+	b.telegramBot.Send(m.Sender, "Please enter the recipient's address and amount separated by a space (e.g., EQAbcdefghijklmnopqrstuvwxyz1234567890abcdefghij 1.5):")
 
 	b.telegramBot.Handle(telebot.OnText, func(c *telebot.Message) {
 		args := strings.Split(c.Text, " ")
 		if len(args) != 2 {
-			b.telegramBot.Send(c.Sender, "Неверный формат. Попробуйте снова.")
+			b.telegramBot.Send(c.Sender, "Invalid format. Please try again.")
 			return
 		}
 
@@ -80,26 +80,26 @@ func (b *Bot) handleSend(m *telebot.Message) {
 		amount := args[1]
 
 		if err := wallet.ValidateAddress(recipientAddress); err != nil {
-			b.telegramBot.Send(c.Sender, fmt.Sprintf("Неверный адрес получателя: %v", err))
+			b.telegramBot.Send(c.Sender, fmt.Sprintf("Invalid recipient address: %v", err))
 			return
 		}
 
 		if err := wallet.ValidateAmount(amount); err != nil {
-			b.telegramBot.Send(c.Sender, fmt.Sprintf("Неверная сумма: %v", err))
+			b.telegramBot.Send(c.Sender, fmt.Sprintf("Invalid amount: %v", err))
 			return
 		}
 
 		userID := int64(c.Sender.ID)
-		comment := "" // Здесь вы можете добавить логику для получения комментария, если это необходимо
+		comment := ""
 
 		err := wallet.SendTON(userID, recipientAddress, amount, comment, b.config)
 		if err != nil {
-			b.telegramBot.Send(c.Sender, fmt.Sprintf("Ошибка при отправке транзакции: %v", err))
+			b.telegramBot.Send(c.Sender, fmt.Sprintf("Error sending transaction: %v", err))
 			return
 		}
 
-		b.telegramBot.Send(c.Sender, fmt.Sprintf("Транзакция успешно отправлена! Отправлено %s TON на адрес %s", amount, recipientAddress))
-		b.registerHandlers() // Сбрасываем обработчики к исходному состоянию
+		b.telegramBot.Send(c.Sender, fmt.Sprintf("Transaction sent successfully! Sent %s TON to address %s", amount, recipientAddress))
+		b.registerHandlers()
 	})
 }
 
@@ -107,35 +107,35 @@ func (b *Bot) handleReceive(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
-		b.telegramBot.Send(m.Sender, "Кошелек не найден. Создайте его с помощью /create_wallet.")
+		b.telegramBot.Send(m.Sender, "Wallet not found. Create it using /create_wallet.")
 		return
 	}
 
-	b.telegramBot.Send(m.Sender, fmt.Sprintf("Ваш адрес для пополнения:\n%s", w.Address))
+	b.telegramBot.Send(m.Sender, fmt.Sprintf("Your address for top-up:\n%s", w.Address))
 }
 
 func (b *Bot) handleHistory(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
-		b.telegramBot.Send(m.Sender, "Кошелек не найден. Создайте его с помощью /create_wallet.")
+		b.telegramBot.Send(m.Sender, "Wallet not found. Create it using /create_wallet.")
 		return
 	}
 
 	transactions, err := wallet.GetTransactionHistory(w, b.config)
 	if err != nil {
-		b.telegramBot.Send(m.Sender, fmt.Sprintf("Ошибка при получении истории транзакций: %v", err))
+		b.telegramBot.Send(m.Sender, fmt.Sprintf("Error getting transaction history: %v", err))
 		return
 	}
 
 	if len(transactions) == 0 {
-		b.telegramBot.Send(m.Sender, "У вас пока нет транзакций.")
+		b.telegramBot.Send(m.Sender, "You don't have any transactions yet.")
 		return
 	}
 
-	historyText := "История ваших транзакций:\n\n"
+	historyText := "Your transaction history:\n\n"
 	for _, tx := range transactions {
-		historyText += fmt.Sprintf("ID: %d\nСумма: %s TON\nАдрес: %s\nДата: %s\n\n", tx.ID, tx.Amount, tx.ToAddress, tx.CreatedAt.Format("02.01.2006 15:04:05"))
+		historyText += fmt.Sprintf("ID: %d\nAmount: %s TON\nAddress: %s\nDate: %s\n\n", tx.ID, tx.Amount, tx.ToAddress, tx.CreatedAt.Format("02.01.2006 15:04:05"))
 	}
 
 	b.telegramBot.Send(m.Sender, historyText)
