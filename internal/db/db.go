@@ -44,6 +44,36 @@ func Init(databaseURL string) error {
 	return nil
 }
 
+func CheckWalletsTableStructure() {
+	var result []struct {
+		ColumnName string
+		DataType   string
+	}
+	if err := DB.Raw("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'wallets'").Scan(&result).Error; err != nil {
+		log.Printf("Ошибка при получении структуры таблицы wallets: %v", err)
+	} else {
+		log.Printf("Структура таблицы wallets:")
+		for _, col := range result {
+			log.Printf("Колонка: %s, Тип: %s", col.ColumnName, col.DataType)
+		}
+	}
+}
+
+func CheckWalletsTableIndexes() {
+	var result []struct {
+		IndexName string
+		IndexDef  string
+	}
+	if err := DB.Raw("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'wallets'").Scan(&result).Error; err != nil {
+		log.Printf("Ошибка при проверке индексов таблицы wallets: %v", err)
+	} else {
+		log.Printf("Индексы таблицы wallets:")
+		for _, idx := range result {
+			log.Printf("Имя индекса: %s, Определение: %s", idx.IndexName, idx.IndexDef)
+		}
+	}
+}
+
 func Close() error {
 	if DB != nil {
 		sqlDB, err := DB.DB()

@@ -48,8 +48,11 @@ func (b *Bot) handleCreateWallet(m *telebot.Message) {
 
 func (b *Bot) handleBalance(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
+	log.Printf("Запрос баланса для пользователя %d", userID)
+
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
+		log.Printf("Ошибка при получении кошелька для пользователя %d: %v", userID, err)
 		b.telegramBot.Send(m.Sender, "Кошелек не найден. Создайте его с помощью /create_wallet.")
 		return
 	}

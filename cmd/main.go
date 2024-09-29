@@ -34,6 +34,9 @@ func main() {
 	}
 	defer db.Close()
 
+	db.CheckWalletsTableStructure()
+	db.CheckWalletsTableIndexes()
+
 	// Создание и запуск бота
 	b, err := bot.NewBot(cfg)
 	if err != nil {
