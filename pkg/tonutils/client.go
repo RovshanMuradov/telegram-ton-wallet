@@ -42,8 +42,14 @@ func NewTonClient(cfg *config.Config) (*TonClient, error) {
 }
 
 func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
-	// Используем wallet.NewSeed() вместо предоставленной seed-фразы
-	seed := wallet.NewSeed()
+	var seed []string
+	if seedPhrase == "" {
+		// Если seed-фраза не предоставлена, генерируем новую
+		seed = wallet.NewSeed()
+	} else {
+		// Используем предоставленную seed-фразу
+		seed = strings.Split(seedPhrase, " ")
+	}
 
 	w, err := wallet.FromSeed(c.api, seed, wallet.V3R2)
 	if err != nil {
@@ -52,12 +58,12 @@ func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
 
 	address := w.Address()
 
-	// Преобразуем seed в строку для сохранения
-	seedPhrase = strings.Join(seed, " ")
+	// Используем окончательную seed-фразу
+	finalSeedPhrase := strings.Join(seed, " ")
 
 	return &Wallet{
 		Address:    address.String(),
-		PrivateKey: seedPhrase,
+		PrivateKey: finalSeedPhrase,
 	}, nil
 }
 

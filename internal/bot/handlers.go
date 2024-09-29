@@ -35,7 +35,7 @@ func (b *Bot) handleHelp(m *telebot.Message) {
 }
 
 func (b *Bot) handleCreateWallet(m *telebot.Message) {
-	userID := int(m.Sender.ID) // Преобразование int64 в int
+	userID := int64(m.Sender.ID) // Преобразование int64 в int
 	w, err := wallet.CreateWallet(userID, b.config)
 	if err != nil {
 		log.Printf("Ошибка при создании кошелька для пользователя %d: %v", userID, err)
@@ -47,7 +47,7 @@ func (b *Bot) handleCreateWallet(m *telebot.Message) {
 }
 
 func (b *Bot) handleBalance(m *telebot.Message) {
-	userID := int(m.Sender.ID)
+	userID := int64(m.Sender.ID)
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
 		b.telegramBot.Send(m.Sender, "Кошелек не найден. Создайте его с помощью /create_wallet.")
@@ -86,7 +86,7 @@ func (b *Bot) handleSend(m *telebot.Message) {
 			return
 		}
 
-		userID := int(c.Sender.ID)
+		userID := int64(c.Sender.ID)
 		comment := "" // Здесь вы можете добавить логику для получения комментария, если это необходимо
 
 		err := wallet.SendTON(userID, recipientAddress, amount, comment, b.config)
@@ -101,7 +101,7 @@ func (b *Bot) handleSend(m *telebot.Message) {
 }
 
 func (b *Bot) handleReceive(m *telebot.Message) {
-	userID := int(m.Sender.ID)
+	userID := int64(m.Sender.ID)
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
 		b.telegramBot.Send(m.Sender, "Кошелек не найден. Создайте его с помощью /create_wallet.")
@@ -112,7 +112,7 @@ func (b *Bot) handleReceive(m *telebot.Message) {
 }
 
 func (b *Bot) handleHistory(m *telebot.Message) {
-	userID := int(m.Sender.ID)
+	userID := int64(m.Sender.ID)
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
 		b.telegramBot.Send(m.Sender, "Кошелек не найден. Создайте его с помощью /create_wallet.")

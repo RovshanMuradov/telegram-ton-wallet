@@ -3,3 +3,5 @@ internal/wallet/encryption.go
 internal/wallet/tests
 docker-compose.yml
 migrations
+merged_output.txt
+Makefile
