@@ -16,38 +16,38 @@ import (
 )
 
 func CreateWallet(userID int64, cfg *config.Config) (*db.Wallet, error) {
-	log.Printf("Начало создания кошелька для пользователя %d", userID)
+	log.Printf("Starting wallet creation for user %d", userID)
 
 	var wallet *db.Wallet
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
-		// Проверка существования пользователя
+		// Check if user exists
 		var user db.User
 		if err := tx.Where("telegram_id = ?", userID).First(&user).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				user = db.User{TelegramID: userID}
 				if err := tx.Create(&user).Error; err != nil {
-					return fmt.Errorf("не удалось создать пользователя: %w", err)
+					return fmt.Errorf("failed to create user: %w", err)
 				}
-				log.Printf("Пользователь %d успешно создан", userID)
+				log.Printf("User %d successfully created", userID)
 			} else {
-				return fmt.Errorf("ошибка при поиске пользователя: %w", err)
+				return fmt.Errorf("error while searching for user: %w", err)
 			}
 		}
 
-		// Создание кошелька
+		// Create wallet
 		tonClient, err := tonutils.NewTonClient(cfg)
 		if err != nil {
-			return fmt.Errorf("не удалось создать TonClient: %w", err)
+			return fmt.Errorf("failed to create TonClient: %w", err)
 		}
 
 		w, err := tonClient.CreateWallet("")
 		if err != nil {
-			return fmt.Errorf("не удалось создать кошелек: %w", err)
+			return fmt.Errorf("failed to create wallet: %w", err)
 		}
 
 		encryptedPrivateKey, err := EncryptPrivateKey(w.PrivateKey, cfg.EncryptionKey)
 		if err != nil {
-			return fmt.Errorf("не удалось зашифровать приватный ключ: %w", err)
+			return fmt.Errorf("failed to encrypt private key: %w", err)
 		}
 
 		log.Printf("user.ID: %d, userID: %d", user.ID, userID)
@@ -58,78 +58,78 @@ func CreateWallet(userID int64, cfg *config.Config) (*db.Wallet, error) {
 		}
 
 		if err := tx.Create(wallet).Error; err != nil {
-			log.Printf("Ошибка при сохранении кошелька в БД: %v", err)
-			return fmt.Errorf("не удалось сохранить кошелек в базу данных: %w", err)
+			log.Printf("Error while saving wallet to DB: %v", err)
+			return fmt.Errorf("failed to save wallet to database: %w", err)
 		}
 
-		// Проверка, что кошелек действительно сохранен
+		// Check if wallet was actually saved
 		var count int64
 		if err := tx.Model(&db.Wallet{}).Where("user_id = ?", user.ID).Count(&count).Error; err != nil {
-			log.Printf("Ошибка при проверке наличия кошелька: %v", err)
+			log.Printf("Error while checking wallet existence: %v", err)
 		} else {
-			log.Printf("Количество кошельков для пользователя %d после создания: %d", user.ID, count)
+			log.Printf("Number of wallets for user %d after creation: %d", user.ID, count)
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("ошибка при создании кошелька: %w", err)
+		return nil, fmt.Errorf("error while creating wallet: %w", err)
 	}
 
-	// Проверка после транзакции
+	// Check after transaction
 	var savedWallet db.Wallet
 	if err := db.DB.Where("user_id = ?", wallet.UserID).First(&savedWallet).Error; err != nil {
-		log.Printf("Ошибка при проверке сохраненного кошелька: %v", err)
+		log.Printf("Error while checking saved wallet: %v", err)
 	} else {
-		log.Printf("Сохраненный кошелек: %+v", savedWallet)
+		log.Printf("Saved wallet: %+v", savedWallet)
 	}
 
-	log.Printf("Кошелек успешно создан для пользователя %d с адресом %s", userID, wallet.Address)
+	log.Printf("Wallet successfully created for user %d with address %s", userID, wallet.Address)
 	return wallet, nil
 }
 
 func GetWalletByUserID(userID int64) (*db.Wallet, error) {
-	log.Printf("Попытка получить кошелек для пользователя %d", userID)
+	log.Printf("Attempting to get wallet for user %d", userID)
 
 	var user db.User
 	if err := db.DB.Where("telegram_id = ?", userID).First(&user).Error; err != nil {
-		log.Printf("Ошибка при поиске пользователя: %v", err)
+		log.Printf("Error while searching for user: %v", err)
 		return nil, err
 	}
 
 	var wallet db.Wallet
 	if err := db.DB.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
-		log.Printf("Ошибка при получении кошелька для пользователя %d: %v", userID, err)
+		log.Printf("Error while getting wallet for user %d: %v", userID, err)
 		return nil, err
 	}
 
-	log.Printf("Кошелек успешно получен для пользователя %d: %+v", userID, wallet)
+	log.Printf("Wallet successfully retrieved for user %d: %+v", userID, wallet)
 	return &wallet, nil
 }
 
 func GetBalance(address string, cfg *config.Config) (string, error) {
 	tonClient, err := tonutils.NewTonClient(cfg)
 	if err != nil {
-		log.Printf("Ошибка при создании TonClient: %v", err)
-		return "", fmt.Errorf("не удалось создать TonClient: %w", err)
+		log.Printf("Error while creating TonClient: %v", err)
+		return "", fmt.Errorf("failed to create TonClient: %w", err)
 	}
 
 	balance, err := tonClient.GetBalance(address)
 	if err != nil {
-		log.Printf("Ошибка при получении баланса для адреса %s: %v", address, err)
-		return "", fmt.Errorf("не удалось получить баланс: %w", err)
+		log.Printf("Error while getting balance for address %s: %v", address, err)
+		return "", fmt.Errorf("failed to get balance: %w", err)
 	}
 
-	log.Printf("Получен баланс для адреса %s: %s", address, balance)
+	log.Printf("Balance retrieved for address %s: %s", address, balance)
 	return balance, nil
 }
 
 func ValidateAddress(address string) error {
-	// Примерная валидация адреса TON (может потребоваться уточнение)
+	// Basic TON address validation (may need refinement)
 	match, _ := regexp.MatchString("^[0-9a-fA-F]{48}$", address)
 	if !match {
-		return fmt.Errorf("неверный формат адреса TON")
+		return fmt.Errorf("invalid TON address format")
 	}
 	return nil
 }
@@ -137,9 +137,9 @@ func ValidateAddress(address string) error {
 func ValidateAmount(amount string) error {
 	_, err := strconv.ParseFloat(amount, 64)
 	if err != nil {
-		return fmt.Errorf("неверный формат суммы")
+		return fmt.Errorf("invalid amount format")
 	}
-	// Здесь можно добавить дополнительные проверки, например, на минимальную сумму
+	// Additional checks can be added here, e.g., minimum amount
 	return nil
 }
 
@@ -166,7 +166,7 @@ func UnlockWallet(wallet *db.Wallet) error {
 }
 
 func CheckSuspiciousActivity(wallet *db.Wallet, amount string) bool {
-	// Пример проверки: блокировка при отправке большой суммы
+	// Example check: block large transactions
 	threshold, _ := strconv.ParseFloat("1000", 64) // 1000 TON
 	sendAmount, _ := strconv.ParseFloat(amount, 64)
 	return sendAmount > threshold
@@ -182,31 +182,31 @@ func SendTON(userID int64, toAddress string, amount string, comment string, cfg 
 
 	wallet, err := GetWalletByUserID(userID)
 	if err != nil {
-		log.Printf("Ошибка при получении кошелька пользователя %d: %v", userID, err)
-		return fmt.Errorf("не удалось получить кошелек пользователя: %w", err)
+		log.Printf("Error while getting wallet for user %d: %v", userID, err)
+		return fmt.Errorf("failed to get user's wallet: %w", err)
 	}
 
 	if wallet.Locked {
-		return fmt.Errorf("кошелек заблокирован")
+		return fmt.Errorf("wallet is locked")
 	}
 
 	if CheckSuspiciousActivity(wallet, amount) {
 		if err := LockWallet(wallet); err != nil {
 			return err
 		}
-		return fmt.Errorf("транзакция заблокирована из-за подозрительной активности")
+		return fmt.Errorf("transaction blocked due to suspicious activity")
 	}
 
 	privateKey, err := DecryptPrivateKey(wallet.PrivateKey, cfg.EncryptionKey)
 	if err != nil {
-		log.Printf("Ошибка при расшифровке приватного ключа для пользователя %d: %v", userID, err)
-		return fmt.Errorf("не удалось расшифровать приватный ключ: %w", err)
+		log.Printf("Error while decrypting private key for user %d: %v", userID, err)
+		return fmt.Errorf("failed to decrypt private key: %w", err)
 	}
 
 	tonClient, err := tonutils.NewTonClient(cfg)
 	if err != nil {
-		log.Printf("Ошибка при создании TonClient: %v", err)
-		return fmt.Errorf("не удалось создать TonClient: %w", err)
+		log.Printf("Error while creating TonClient: %v", err)
+		return fmt.Errorf("failed to create TonClient: %w", err)
 	}
 
 	err = utils.Retry(3, time.Second, func() error {
@@ -214,16 +214,16 @@ func SendTON(userID int64, toAddress string, amount string, comment string, cfg 
 	})
 
 	if err != nil {
-		log.Printf("Ошибка при отправке транзакции от пользователя %d на адрес %s: %v", userID, toAddress, err)
-		return fmt.Errorf("не удалось отправить транзакцию: %w", err)
+		log.Printf("Error while sending transaction from user %d to address %s: %v", userID, toAddress, err)
+		return fmt.Errorf("failed to send transaction: %w", err)
 	}
 
 	if err := UpdateWalletBalance(wallet, cfg); err != nil {
-		log.Printf("Ошибка при обновлении баланса кошелька пользователя %d: %v", userID, err)
-		// Не возвращаем ошибку, так как транзакция уже отправлена
+		log.Printf("Error while updating wallet balance for user %d: %v", userID, err)
+		// We don't return an error here as the transaction has already been sent
 	}
 
-	log.Printf("Успешно отправлено %s TON от пользователя %d на адрес %s", amount, userID, toAddress)
+	log.Printf("Successfully sent %s TON from user %d to address %s", amount, userID, toAddress)
 	return nil
 }
 
@@ -234,15 +234,15 @@ func GetTransactionHistory(wallet *db.Wallet, cfg *config.Config) ([]db.Transact
 		return nil, err
 	}
 
-	// Здесь можно добавить получение дополнительной информации о транзакциях из TON API
+	// Additional transaction information from TON API can be added here
 	return transactions, nil
 }
 
 func RecoverWallet(userID int64, seedPhrase string, cfg *config.Config) (*db.Wallet, error) {
 	tonClient, err := tonutils.NewTonClient(cfg)
 	if err != nil {
-		log.Printf("Ошибка при создании TonClient: %v", err)
-		return nil, fmt.Errorf("не удалось создать TonClient: %w", err)
+		log.Printf("Error while creating TonClient: %v", err)
+		return nil, fmt.Errorf("failed to create TonClient: %w", err)
 	}
 
 	w, err := tonClient.RecoverWalletFromSeed(seedPhrase)

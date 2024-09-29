@@ -26,19 +26,19 @@ func Init(databaseURL string) error {
 		if err == nil {
 			break
 		}
-		log.Printf("Попытка подключения к базе данных %d/30: %v", i+1, err)
+		log.Printf("Database connection attempt %d/30: %v", i+1, err)
 		time.Sleep(time.Second * 2)
 	}
 
 	if err != nil {
-		return fmt.Errorf("не удалось подключиться к базе данных после 30 попыток: %w", err)
+		return fmt.Errorf("failed to connect to the database after 30 attempts: %w", err)
 	}
 
 	DB = sqlDB
 
-	// Выполнение миграций
+	// Run migrations
 	if err := runMigrations(databaseURL); err != nil {
-		return fmt.Errorf("ошибка при выполнении миграций: %w", err)
+		return fmt.Errorf("error running migrations: %w", err)
 	}
 
 	return nil
@@ -50,11 +50,11 @@ func CheckWalletsTableStructure() {
 		DataType   string
 	}
 	if err := DB.Raw("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'wallets'").Scan(&result).Error; err != nil {
-		log.Printf("Ошибка при получении структуры таблицы wallets: %v", err)
+		log.Printf("Error getting wallets table structure: %v", err)
 	} else {
-		log.Printf("Структура таблицы wallets:")
+		log.Printf("Wallets table structure:")
 		for _, col := range result {
-			log.Printf("Колонка: %s, Тип: %s", col.ColumnName, col.DataType)
+			log.Printf("Column: %s, Type: %s", col.ColumnName, col.DataType)
 		}
 	}
 }
@@ -65,11 +65,11 @@ func CheckWalletsTableIndexes() {
 		IndexDef  string
 	}
 	if err := DB.Raw("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'wallets'").Scan(&result).Error; err != nil {
-		log.Printf("Ошибка при проверке индексов таблицы wallets: %v", err)
+		log.Printf("Error checking wallets table indexes: %v", err)
 	} else {
-		log.Printf("Индексы таблицы wallets:")
+		log.Printf("Wallets table indexes:")
 		for _, idx := range result {
-			log.Printf("Имя индекса: %s, Определение: %s", idx.IndexName, idx.IndexDef)
+			log.Printf("Index name: %s, Definition: %s", idx.IndexName, idx.IndexDef)
 		}
 	}
 }
@@ -78,7 +78,7 @@ func Close() error {
 	if DB != nil {
 		sqlDB, err := DB.DB()
 		if err != nil {
-			return fmt.Errorf("ошибка при получении sql.DB: %w", err)
+			return fmt.Errorf("error getting sql.DB: %w", err)
 		}
 		return sqlDB.Close()
 	}
@@ -86,32 +86,32 @@ func Close() error {
 }
 
 func runMigrations(databaseURL string) error {
-	log.Println("Начало выполнения миграций")
-	migrationsPath := "/app/migrations/migrations" // Обновленный путь
-	log.Println("Путь к миграциям:", migrationsPath)
+	log.Println("Starting migrations")
+	migrationsPath := "/app/migrations/migrations"
+	log.Println("Migrations path:", migrationsPath)
 
-	// Выведем список файлов в директории
+	// List files in the directory
 	files, err := os.ReadDir(migrationsPath)
 	if err != nil {
-		log.Printf("Ошибка при чтении директории миграций: %v", err)
+		log.Printf("Error reading migrations directory: %v", err)
 	} else {
 		for _, file := range files {
-			log.Println("Файл миграции:", file.Name())
+			log.Println("Migration file:", file.Name())
 		}
 	}
 
 	m, err := migrate.New(
-		"file://"+migrationsPath, // Используем обновленный путь
+		"file://"+migrationsPath,
 		databaseURL,
 	)
 	if err != nil {
-		return fmt.Errorf("ошибка при инициализации миграций: %w", err)
+		return fmt.Errorf("error initializing migrations: %w", err)
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("ошибка при выполнении миграций: %w", err)
+		return fmt.Errorf("error running migrations: %w", err)
 	}
 
-	log.Println("Миграции успешно выполнены")
+	log.Println("Migrations completed successfully")
 	return nil
 }

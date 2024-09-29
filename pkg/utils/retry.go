@@ -17,12 +17,12 @@ func Retry(attempts int, sleep time.Duration, f func() error) error {
 		}
 
 		time.Sleep(sleep)
-		sleep *= 2 // Экспоненциальное увеличение времени ожидания
+		sleep *= 2 // Exponential increase in waiting time
 	}
 	return err
 }
 
-// Использование в wallet.go:
+//Use in wallet.go:
 // err := utils.Retry(3, time.Second, func() error {
 //     return tonClient.SendTransaction(privateKey, toAddress, amount)
 // })

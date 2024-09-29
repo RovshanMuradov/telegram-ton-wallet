@@ -15,40 +15,40 @@ import (
 )
 
 func main() {
-	// Инициализация логирования
+	// Initialize logging
 	logging.Init()
 
-	// Загрузка конфигурации
+	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Ошибка загрузки конфигурации: %v", err)
+		log.Fatalf("Error loading configuration: %v", err)
 	}
 
-	// Добавляем небольшую задержку перед инициализацией базы данных
+	// Add a small delay before initializing the database
 	time.Sleep(time.Second * 5)
 
-	// Инициализация базы данных
+	// Initialize the database
 	err = db.Init(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("Ошибка подключения к базе данных: %v", err)
+		log.Fatalf("Error connecting to the database: %v", err)
 	}
 	defer db.Close()
 
 	db.CheckWalletsTableStructure()
 	db.CheckWalletsTableIndexes()
 
-	// Создание и запуск бота
+	// Create and start the bot
 	b, err := bot.NewBot(cfg)
 	if err != nil {
-		log.Fatalf("Ошибка создания бота: %v", err)
+		log.Fatalf("Error creating bot: %v", err)
 	}
 
 	b.Start()
 
-	// Ожидание сигнала для завершения
+	// Wait for termination signal
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
-	log.Println("Завершение работы...")
+	log.Println("Shutting down...")
 }
