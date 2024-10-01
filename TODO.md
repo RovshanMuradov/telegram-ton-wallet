@@ -12,7 +12,7 @@
   - [ ] Implement for /send
   - [ ] Implement for /receive
   - [ ] Implement for /history
-- [ ] Improve input error handling
+  - [ ] Improve input error handling
   - [ ] Add validation for address format and amount when sending
   - [ ] Implement informative error messages
 
@@ -24,7 +24,7 @@
 - [ ] Add user notifications about transaction status
 
 ## 4. Optimizing Blockchain Interaction
-- [ ] Implement balance caching
+  - [ ] Implement balance caching
   - [ ] Add periodic updating of cached balance
   - [ ] Optimize blockchain queries
 

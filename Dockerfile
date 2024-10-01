@@ -25,3 +25,4 @@ EXPOSE 8080
 RUN chmod -R 777 /migrations/migrations
 
 CMD ["./main"]
+
