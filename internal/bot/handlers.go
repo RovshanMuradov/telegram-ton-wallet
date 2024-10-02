@@ -36,6 +36,15 @@ func (b *Bot) handleHelp(m *telebot.Message) {
 
 func (b *Bot) handleCreateWallet(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
+
+	// Checking the existence of a wallet
+	existingWallet, err := wallet.GetWalletByUserID(userID)
+	if err == nil && existingWallet != nil {
+		// Wallet already exists
+		b.telegramBot.Send(m.Sender, fmt.Sprintf("You already have a wallet!\nAddress: %s", existingWallet.Address))
+		return
+	}
+
 	w, err := wallet.CreateWallet(userID, b.config)
 	if err != nil {
 		log.Printf("Error creating wallet for user %d: %v", userID, err)

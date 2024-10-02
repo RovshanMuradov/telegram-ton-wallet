@@ -94,12 +94,18 @@ func GetWalletByUserID(userID int64) (*db.Wallet, error) {
 
 	var user db.User
 	if err := db.DB.Where("telegram_id = ?", userID).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
 		log.Printf("Error while searching for user: %v", err)
 		return nil, err
 	}
 
 	var wallet db.Wallet
 	if err := db.DB.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
 		log.Printf("Error while getting wallet for user %d: %v", userID, err)
 		return nil, err
 	}
