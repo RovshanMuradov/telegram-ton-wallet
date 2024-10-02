@@ -5,8 +5,8 @@
   - [x] Modify the logic of /create_wallet command
   - [x] Add existing wallet check
   - [x] Implement display of existing wallet info on repeated requests
-- [ ] Develop a wallet backup mechanism
-- [ ] Implement wallet recovery function
+- [x] Develop a wallet backup mechanism
+- [x] Implement wallet recovery function
 
 ## 2. Checks and Validation
 - [ ] Add wallet existence check before executing commands
