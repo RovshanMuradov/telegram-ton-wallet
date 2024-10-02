@@ -16,7 +16,8 @@ import (
 
 func main() {
 	// Initialize logging
-	logging.Init()
+	logging.InitLogger()
+	logging.Info("Zap logger initialized and ready to use")
 
 	// Load configuration
 	cfg, err := config.LoadConfig()

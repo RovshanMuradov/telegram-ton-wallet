@@ -1,3 +1,4 @@
+// internal/bot/handler.go
 package bot
 
 import (
@@ -8,7 +9,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rovshanmuradov/telegram-ton-wallet/internal/logging"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/wallet"
+	"go.uber.org/zap"
 	"gopkg.in/tucnak/telebot.v2"
 )
 
@@ -74,43 +77,33 @@ func (b *Bot) handleCreateWallet(m *telebot.Message) {
 
 func (b *Bot) handleBalance(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
-	log.Printf("Balance request for user %d", userID)
+	logging.Info("Balance request", zap.Int64("userID", userID))
 
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
-		log.Printf("Error getting wallet for user %d: %v", userID, err)
-		if _, sendErr := b.telegramBot.Send(m.Sender, "Wallet not found. Create it using /create_wallet."); sendErr != nil {
-			log.Printf("Error sending wallet not found message: %v", sendErr)
-		}
+		logging.Error("Error getting wallet", zap.Int64("userID", userID), zap.Error(err))
+		b.sendMessage(m.Sender, "Wallet not found. Create it using /create_wallet.")
 		return
 	}
 
 	balance, err := wallet.GetBalance(w.Address, b.config)
 	if err != nil {
-		log.Printf("Error getting balance for user %d: %v", userID, err)
-		if _, sendErr := b.telegramBot.Send(m.Sender, fmt.Sprintf("Error getting balance: %v", err)); sendErr != nil {
-			log.Printf("Error sending balance error message: %v", sendErr)
-		}
+		logging.Error("Error getting balance", zap.Int64("userID", userID), zap.Error(err))
+		b.sendMessage(m.Sender, fmt.Sprintf("Error getting balance: %v", err))
 		return
 	}
 
-	if _, sendErr := b.telegramBot.Send(m.Sender, fmt.Sprintf("Your balance: %s TON", balance)); sendErr != nil {
-		log.Printf("Error sending balance message: %v", sendErr)
-	}
+	logging.Info("Balance retrieved", zap.Int64("userID", userID), zap.String("balance", balance))
+	b.sendMessage(m.Sender, fmt.Sprintf("Your balance: %s TON", balance))
 }
 
 func (b *Bot) handleSend(m *telebot.Message) {
-	if _, err := b.telegramBot.Send(m.Sender, "Please enter the recipient's address and amount separated by a space (e.g., EQAbcdefghijklmnopqrstuvwxyz1234567890abcdefghij 1.5):"); err != nil {
-		log.Printf("Error sending message: %v", err)
-		return
-	}
+	b.sendMessage(m.Sender, "Please enter the recipient's address and amount separated by a space (e.g., EQAbcdefghijklmnopqrstuvwxyz1234567890abcdefghij 1.5):")
 
 	b.telegramBot.Handle(telebot.OnText, func(c *telebot.Message) {
 		args := strings.Split(c.Text, " ")
 		if len(args) != 2 {
-			if _, err := b.telegramBot.Send(c.Sender, "Invalid format. Please try again."); err != nil {
-				log.Printf("Error sending message: %v", err)
-			}
+			b.sendMessage(c.Sender, "Invalid format. Please try again.")
 			return
 		}
 
@@ -118,16 +111,14 @@ func (b *Bot) handleSend(m *telebot.Message) {
 		amount := args[1]
 
 		if err := wallet.ValidateAddress(recipientAddress); err != nil {
-			if _, err := b.telegramBot.Send(c.Sender, fmt.Sprintf("Invalid recipient address: %v", err)); err != nil {
-				log.Printf("Error sending message: %v", err)
-			}
+			logging.Error("Invalid recipient address", zap.String("address", recipientAddress), zap.Error(err))
+			b.sendMessage(c.Sender, fmt.Sprintf("Invalid recipient address: %v", err))
 			return
 		}
 
 		if err := wallet.ValidateAmount(amount); err != nil {
-			if _, err := b.telegramBot.Send(c.Sender, fmt.Sprintf("Invalid amount: %v", err)); err != nil {
-				log.Printf("Error sending message: %v", err)
-			}
+			logging.Error("Invalid amount", zap.String("amount", amount), zap.Error(err))
+			b.sendMessage(c.Sender, fmt.Sprintf("Invalid amount: %v", err))
 			return
 		}
 
@@ -136,15 +127,12 @@ func (b *Bot) handleSend(m *telebot.Message) {
 
 		err := wallet.SendTON(userID, recipientAddress, amount, comment, b.config)
 		if err != nil {
-			if _, err := b.telegramBot.Send(c.Sender, fmt.Sprintf("Error sending transaction: %v", err)); err != nil {
-				log.Printf("Error sending message: %v", err)
-			}
+			logging.Error("Error sending transaction", zap.Int64("userID", userID), zap.Error(err))
+			b.sendMessage(c.Sender, fmt.Sprintf("Error sending transaction: %v", err))
 			return
 		}
 
-		if _, err := b.telegramBot.Send(c.Sender, fmt.Sprintf("Transaction sent successfully! Sent %s TON to address %s", amount, recipientAddress)); err != nil {
-			log.Printf("Error sending message: %v", err)
-		}
+		b.sendMessage(c.Sender, fmt.Sprintf("Transaction sent successfully! Sent %s TON to address %s", amount, recipientAddress))
 
 		b.registerHandlers()
 	})
