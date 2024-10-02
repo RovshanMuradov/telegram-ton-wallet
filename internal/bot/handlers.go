@@ -37,7 +37,10 @@ func (b *Bot) handleHelp(m *telebot.Message) {
 /send - Send TON
 /receive - Get address for top-up
 /history - Transaction history
-/help - Command reference`
+/help - Command reference
+/backup - Backup command
+/restore - Restore command
+`
 	if _, err := b.telegramBot.Send(m.Sender, helpText); err != nil {
 		log.Printf("Error sending help text: %v", err)
 	}
