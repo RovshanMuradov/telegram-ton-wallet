@@ -100,12 +100,17 @@ func (b *Bot) handleBalance(m *telebot.Message) {
 }
 
 func (b *Bot) handleSend(m *telebot.Message) {
-	b.telegramBot.Send(m.Sender, "Please enter the recipient's address and amount separated by a space (e.g., EQAbcdefghijklmnopqrstuvwxyz1234567890abcdefghij 1.5):")
+	if _, err := b.telegramBot.Send(m.Sender, "Please enter the recipient's address and amount separated by a space (e.g., EQAbcdefghijklmnopqrstuvwxyz1234567890abcdefghij 1.5):"); err != nil {
+		log.Printf("Error sending message: %v", err)
+		return
+	}
 
 	b.telegramBot.Handle(telebot.OnText, func(c *telebot.Message) {
 		args := strings.Split(c.Text, " ")
 		if len(args) != 2 {
-			b.telegramBot.Send(c.Sender, "Invalid format. Please try again.")
+			if _, err := b.telegramBot.Send(c.Sender, "Invalid format. Please try again."); err != nil {
+				log.Printf("Error sending message: %v", err)
+			}
 			return
 		}
 
@@ -113,12 +118,16 @@ func (b *Bot) handleSend(m *telebot.Message) {
 		amount := args[1]
 
 		if err := wallet.ValidateAddress(recipientAddress); err != nil {
-			b.telegramBot.Send(c.Sender, fmt.Sprintf("Invalid recipient address: %v", err))
+			if _, err := b.telegramBot.Send(c.Sender, fmt.Sprintf("Invalid recipient address: %v", err)); err != nil {
+				log.Printf("Error sending message: %v", err)
+			}
 			return
 		}
 
 		if err := wallet.ValidateAmount(amount); err != nil {
-			b.telegramBot.Send(c.Sender, fmt.Sprintf("Invalid amount: %v", err))
+			if _, err := b.telegramBot.Send(c.Sender, fmt.Sprintf("Invalid amount: %v", err)); err != nil {
+				log.Printf("Error sending message: %v", err)
+			}
 			return
 		}
 
@@ -127,11 +136,16 @@ func (b *Bot) handleSend(m *telebot.Message) {
 
 		err := wallet.SendTON(userID, recipientAddress, amount, comment, b.config)
 		if err != nil {
-			b.telegramBot.Send(c.Sender, fmt.Sprintf("Error sending transaction: %v", err))
+			if _, err := b.telegramBot.Send(c.Sender, fmt.Sprintf("Error sending transaction: %v", err)); err != nil {
+				log.Printf("Error sending message: %v", err)
+			}
 			return
 		}
 
-		b.telegramBot.Send(c.Sender, fmt.Sprintf("Transaction sent successfully! Sent %s TON to address %s", amount, recipientAddress))
+		if _, err := b.telegramBot.Send(c.Sender, fmt.Sprintf("Transaction sent successfully! Sent %s TON to address %s", amount, recipientAddress)); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
+
 		b.registerHandlers()
 	})
 }
@@ -140,29 +154,39 @@ func (b *Bot) handleReceive(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
-		b.telegramBot.Send(m.Sender, "Wallet not found. Create it using /create_wallet.")
+		if _, err := b.telegramBot.Send(m.Sender, "Wallet not found. Create it using /create_wallet."); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
 		return
 	}
 
-	b.telegramBot.Send(m.Sender, fmt.Sprintf("Your address for top-up:\n%s", w.Address))
+	if _, err := b.telegramBot.Send(m.Sender, fmt.Sprintf("Your address for top-up:\n%s", w.Address)); err != nil {
+		log.Printf("Error sending message: %v", err)
+	}
 }
 
 func (b *Bot) handleHistory(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
 	w, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
-		b.telegramBot.Send(m.Sender, "Wallet not found. Create it using /create_wallet.")
+		if _, err := b.telegramBot.Send(m.Sender, "Wallet not found. Create it using /create_wallet."); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
 		return
 	}
 
 	transactions, err := wallet.GetTransactionHistory(w, b.config)
 	if err != nil {
-		b.telegramBot.Send(m.Sender, fmt.Sprintf("Error getting transaction history: %v", err))
+		if _, err := b.telegramBot.Send(m.Sender, fmt.Sprintf("Error getting transaction history: %v", err)); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
 		return
 	}
 
 	if len(transactions) == 0 {
-		b.telegramBot.Send(m.Sender, "You don't have any transactions yet.")
+		if _, err := b.telegramBot.Send(m.Sender, "You don't have any transactions yet."); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
 		return
 	}
 
@@ -171,7 +195,9 @@ func (b *Bot) handleHistory(m *telebot.Message) {
 		historyText += fmt.Sprintf("ID: %d\nAmount: %s TON\nAddress: %s\nDate: %s\n\n", tx.ID, tx.Amount, tx.ToAddress, tx.CreatedAt.Format("02.01.2006 15:04:05"))
 	}
 
-	b.telegramBot.Send(m.Sender, historyText)
+	if _, err := b.telegramBot.Send(m.Sender, historyText); err != nil {
+		log.Printf("Error sending message: %v", err)
+	}
 }
 
 func (b *Bot) handleBackup(m *telebot.Message) {
@@ -179,34 +205,41 @@ func (b *Bot) handleBackup(m *telebot.Message) {
 
 	backupData, err := wallet.CreateWalletBackup(userID, b.config)
 	if err != nil {
-		b.telegramBot.Send(m.Sender, fmt.Sprintf("Error creating backup: %v", err))
+		if _, err := b.telegramBot.Send(m.Sender, fmt.Sprintf("Error creating backup: %v", err)); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
 		return
 	}
 
 	// Create a temporary file
 	tmpfile, err := os.CreateTemp("", "wallet_backup_*.bin")
 	if err != nil {
-		b.telegramBot.Send(m.Sender, "Error creating backup file")
+		if _, err := b.telegramBot.Send(m.Sender, "Error creating backup file"); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
 		return
 	}
 	defer os.Remove(tmpfile.Name())
 
 	// Write the backup data to the file
 	if _, err := tmpfile.Write(backupData); err != nil {
-		b.telegramBot.Send(m.Sender, "Error writing backup data")
+		if _, err := b.telegramBot.Send(m.Sender, "Error writing backup data"); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
 		return
 	}
 
 	// Close the file before sending
 	if err := tmpfile.Close(); err != nil {
-		b.telegramBot.Send(m.Sender, "Error closing backup file")
+		if _, err := b.telegramBot.Send(m.Sender, "Error closing backup file"); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
 		return
 	}
 
 	// Send the file
 	doc := &telebot.Document{File: telebot.FromDisk(tmpfile.Name())}
-	_, err = b.telegramBot.Send(m.Sender, doc, "Here's your wallet backup. Keep it safe!")
-	if err != nil {
+	if _, err := b.telegramBot.Send(m.Sender, doc, "Here's your wallet backup. Keep it safe!"); err != nil {
 		log.Printf("Error sending backup file: %v", err)
 		if _, sendErr := b.telegramBot.Send(m.Sender, "Error sending backup file. Please try again later."); sendErr != nil {
 			log.Printf("Error sending error message: %v", sendErr)
@@ -216,7 +249,10 @@ func (b *Bot) handleBackup(m *telebot.Message) {
 }
 
 func (b *Bot) handleRestore(m *telebot.Message) {
-	b.telegramBot.Send(m.Sender, "Please send me the backup file.")
+	if _, err := b.telegramBot.Send(m.Sender, "Please send me the backup file."); err != nil {
+		log.Printf("Error sending message: %v", err)
+		return
+	}
 
 	b.telegramBot.Handle(telebot.OnDocument, func(m *telebot.Message) {
 		userID := int64(m.Sender.ID)
@@ -224,7 +260,9 @@ func (b *Bot) handleRestore(m *telebot.Message) {
 		// Download the file
 		fileInfo, err := b.telegramBot.GetFile(m.Document.MediaFile())
 		if err != nil {
-			b.telegramBot.Send(m.Sender, "Error accessing backup file")
+			if _, err := b.telegramBot.Send(m.Sender, "Error accessing backup file"); err != nil {
+				log.Printf("Error sending message: %v", err)
+			}
 			return
 		}
 
@@ -232,9 +270,10 @@ func (b *Bot) handleRestore(m *telebot.Message) {
 		var buf bytes.Buffer
 
 		// Download the file content into the buffer
-		_, err = io.Copy(&buf, fileInfo)
-		if err != nil {
-			b.telegramBot.Send(m.Sender, "Error reading backup file")
+		if _, err := io.Copy(&buf, fileInfo); err != nil {
+			if _, err := b.telegramBot.Send(m.Sender, "Error reading backup file"); err != nil {
+				log.Printf("Error sending message: %v", err)
+			}
 			return
 		}
 
@@ -244,11 +283,16 @@ func (b *Bot) handleRestore(m *telebot.Message) {
 		// Restore the wallet
 		err = wallet.RestoreWalletFromBackup(userID, backupData, b.config)
 		if err != nil {
-			b.telegramBot.Send(m.Sender, fmt.Sprintf("Error restoring wallet: %v", err))
+			if _, err := b.telegramBot.Send(m.Sender, fmt.Sprintf("Error restoring wallet: %v", err)); err != nil {
+				log.Printf("Error sending message: %v", err)
+			}
 			return
 		}
 
-		b.telegramBot.Send(m.Sender, "Wallet successfully restored!")
+		if _, err := b.telegramBot.Send(m.Sender, "Wallet successfully restored!"); err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
+
 		b.registerHandlers() // Re-register handlers to stop listening for documents
 	})
 }
