@@ -2,6 +2,7 @@
 package wallet
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"regexp"
@@ -89,17 +90,109 @@ func CreateWallet(userID int64, cfg *config.Config) (*db.Wallet, error) {
 	return wallet, nil
 }
 
+func CreateWalletBackup(userID int64, cfg *config.Config) ([]byte, error) {
+	wallet, err := GetWalletByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get wallet: %w", err)
+	}
+
+	// Decrypt the private key
+	privateKey, err := DecryptPrivateKey(wallet.PrivateKey, cfg.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt private key: %w", err)
+	}
+
+	// Create a backup structure
+	backup := struct {
+		Address    string `json:"address"`
+		PrivateKey string `json:"private_key"`
+		Timestamp  int64  `json:"timestamp"`
+	}{
+		Address:    wallet.Address,
+		PrivateKey: privateKey,
+		Timestamp:  time.Now().Unix(),
+	}
+
+	// Convert to JSON
+	jsonData, err := json.Marshal(backup)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal backup data: %w", err)
+	}
+
+	// Encrypt the JSON data
+	encryptedData, err := utils.EncryptData(jsonData, cfg.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt backup data: %w", err)
+	}
+
+	return encryptedData, nil
+}
+
+func RestoreWalletFromBackup(userID int64, encryptedBackup []byte, cfg *config.Config) error {
+	// Decrypt the backup data
+	jsonData, err := utils.DecryptData(encryptedBackup, cfg.EncryptionKey)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt backup data: %w", err)
+	}
+
+	// Parse the JSON data
+	var backup struct {
+		Address    string `json:"address"`
+		PrivateKey string `json:"private_key"`
+		Timestamp  int64  `json:"timestamp"`
+	}
+	if err := json.Unmarshal(jsonData, &backup); err != nil {
+		return fmt.Errorf("failed to unmarshal backup data: %w", err)
+	}
+
+	// Validate the backup data
+	if err := ValidateAddress(backup.Address); err != nil {
+		return fmt.Errorf("invalid address in backup: %w", err)
+	}
+
+	// Check if the wallet already exists
+	existingWallet, err := GetWalletByUserID(userID)
+	if err == nil && existingWallet != nil {
+		return fmt.Errorf("user already has a wallet")
+	}
+
+	// Encrypt the private key
+	encryptedPrivateKey, err := EncryptPrivateKey(backup.PrivateKey, cfg.EncryptionKey)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt private key: %w", err)
+	}
+
+	// Create a new wallet entry
+	wallet := &db.Wallet{
+		UserID:     userID,
+		Address:    backup.Address,
+		PrivateKey: encryptedPrivateKey,
+	}
+
+	if err := db.DB.Create(wallet).Error; err != nil {
+		return fmt.Errorf("failed to create wallet in database: %w", err)
+	}
+
+	return nil
+}
+
 func GetWalletByUserID(userID int64) (*db.Wallet, error) {
 	log.Printf("Attempting to get wallet for user %d", userID)
 
 	var user db.User
 	if err := db.DB.Where("telegram_id = ?", userID).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
 		log.Printf("Error while searching for user: %v", err)
 		return nil, err
 	}
 
 	var wallet db.Wallet
 	if err := db.DB.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
 		log.Printf("Error while getting wallet for user %d: %v", userID, err)
 		return nil, err
 	}
