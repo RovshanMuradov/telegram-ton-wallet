@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned Changes
-- Limit wallet creation to one per user
-- Add wallet existence check before executing commands
+### Added
+- Mechanism for wallet backup
+- Functionality for wallet restoration
+
+### Changed
+- Improved error handling in handlers.go
+
+### Fixed
+- Limited wallet creation to one per user
+- Added check for existing wallet
+- Implemented display of existing wallet info on repeated request
+
+### Planned
 - Improve transaction sending process
 - Optimize blockchain interactions
 - Enhance security and recovery mechanisms
@@ -19,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhance testing and debugging
 - Update documentation
 
-## [1.0.0] - 2023-06-15
+## [1.0.0] - 2024-09-01
 
 ### Added
 - Basic functionality of Telegram TON Wallet Bot
