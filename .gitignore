@@ -1,5 +1,5 @@
 .env
-internal/wallet/encryption.go
+internal/wallet/tests/encryption_test.go
 internal/wallet/tests
 docker-compose.yml
 migrations

@@ -262,7 +262,7 @@ func (b *Bot) handleMessages(m *telebot.Message) {
 		} else {
 			b.sendMessage(m.Sender, "Please send a valid backup file.")
 		}
-	// Добавьте другие состояния по мере необходимости
+	// Можно добавить другие состояния по мере необходимости
 	default:
 		b.sendMessage(m.Sender, "I didn't understand that command. Use /help to see available commands.")
 	}

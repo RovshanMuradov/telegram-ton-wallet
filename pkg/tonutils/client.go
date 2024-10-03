@@ -8,13 +8,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/config"
+	"github.com/rovshanmuradov/telegram-ton-wallet/internal/logging"
 	"github.com/tyler-smith/go-bip39"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/ton"
 	"github.com/xssnick/tonutils-go/ton/wallet"
+	"go.uber.org/zap"
 )
 
 type TonClient struct {
@@ -24,16 +27,21 @@ type TonClient struct {
 }
 
 func NewTonClient(cfg *config.Config) (*TonClient, error) {
+	logger := logging.GetLogger()
+	logger.Info("Creating new TON client")
+
 	ctx := context.Background()
 	client := liteclient.NewConnectionPool()
 
 	err := client.AddConnectionsFromConfigUrl(ctx, cfg.TonConfigURL)
 	if err != nil {
+		logger.Error("Failed to add connection", zap.Error(err))
 		return nil, fmt.Errorf("failed to add connection: %w", err)
 	}
 
 	api := ton.NewAPIClient(client)
 
+	logger.Info("TON client created successfully")
 	return &TonClient{
 		client: client,
 		ctx:    ctx,
@@ -42,25 +50,28 @@ func NewTonClient(cfg *config.Config) (*TonClient, error) {
 }
 
 func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
+	logger := logging.GetLogger()
+	logger.Info("Creating new wallet")
+
 	var seed []string
 	if seedPhrase == "" {
-		// If seed phrase is not provided, generate a new one
+		logger.Debug("Generating new seed phrase")
 		seed = wallet.NewSeed()
 	} else {
-		// Use the provided seed phrase
+		logger.Debug("Using provided seed phrase")
 		seed = strings.Split(seedPhrase, " ")
 	}
 
 	w, err := wallet.FromSeed(c.api, seed, wallet.V3R2)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create wallet from seed: %w (seed words: %v)", err, seed)
+		logger.Error("Failed to create wallet from seed", zap.Error(err))
+		return nil, fmt.Errorf("failed to create wallet from seed: %w", err)
 	}
 
 	address := w.Address()
-
-	// Use the final seed phrase
 	finalSeedPhrase := strings.Join(seed, " ")
 
+	logger.Info("Wallet created successfully", zap.String("address", address.String()))
 	return &Wallet{
 		Address:    address.String(),
 		PrivateKey: finalSeedPhrase,
@@ -68,50 +79,92 @@ func (c *TonClient) CreateWallet(seedPhrase string) (*Wallet, error) {
 }
 
 func GenerateSeedPhrase() (string, error) {
+	logger := logging.GetLogger()
+	logger.Info("Generating new seed phrase")
+
 	entropy, err := bip39.NewEntropy(256)
 	if err != nil {
+		logger.Error("Failed to generate entropy", zap.Error(err))
 		return "", fmt.Errorf("failed to generate entropy: %w", err)
 	}
 
 	mnemonic, err := bip39.NewMnemonic(entropy)
 	if err != nil {
+		logger.Error("Failed to generate mnemonic", zap.Error(err))
 		return "", fmt.Errorf("failed to generate mnemonic: %w", err)
 	}
 
 	words := strings.Split(mnemonic, " ")
 	if len(words) != 24 {
+		logger.Error("Generated mnemonic has invalid length", zap.Int("wordCount", len(words)))
 		return "", fmt.Errorf("generated mnemonic has invalid length: expected 24 words, got %d", len(words))
 	}
 
+	logger.Info("Seed phrase generated successfully")
 	return mnemonic, nil
 }
 
 func (c *TonClient) GetBalance(addressStr string) (string, error) {
-	addr, err := address.ParseAddr(addressStr)
+	logger := logging.With(zap.String("address", addressStr))
+	logger.Info("Getting balance")
+
+	var balance string
+
+	// Определяем функцию для повторения
+	getBalanceFunc := func() error {
+		addr, err := address.ParseAddr(addressStr)
+		if err != nil {
+			logger.Error("Invalid address", zap.Error(err))
+			return fmt.Errorf("invalid address: %w", err)
+		}
+
+		block, err := c.api.CurrentMasterchainInfo(c.ctx)
+		if err != nil {
+			logger.Error("Failed to get current block", zap.Error(err))
+			return fmt.Errorf("failed to get current block: %w", err)
+		}
+
+		account, err := c.api.GetAccount(c.ctx, block, addr)
+		if err != nil {
+			logger.Error("Failed to get account", zap.Error(err))
+			return fmt.Errorf("failed to get account: %w", err)
+		}
+
+		if account.IsActive {
+			balance = account.State.Balance.String()
+		} else {
+			balance = "0"
+		}
+
+		return nil
+	}
+
+	// Используем функцию retry
+	err := retry.Do(
+		getBalanceFunc,
+		retry.Attempts(3),
+		retry.Delay(1*time.Second),
+		retry.DelayType(retry.BackOffDelay),
+		retry.OnRetry(func(n uint, err error) {
+			logger.Warn("Retry attempt", zap.Uint("attempt", n), zap.Error(err))
+		}),
+	)
+
 	if err != nil {
-		return "", fmt.Errorf("invalid address: %w", err)
+		logger.Error("Failed to get balance after retries", zap.Error(err))
+		return "", fmt.Errorf("failed to get balance after retries: %w", err)
 	}
 
-	block, err := c.api.CurrentMasterchainInfo(c.ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get current block: %w", err)
-	}
-
-	account, err := c.api.GetAccount(c.ctx, block, addr)
-	if err != nil {
-		return "", fmt.Errorf("failed to get account: %w", err)
-	}
-
-	if account.IsActive {
-		return account.State.Balance.String(), nil
-	}
-
-	return "0", nil
+	logger.Info("Balance retrieved successfully", zap.String("balance", balance))
+	return balance, nil
 }
 
 // More flexible and potentially more accurate, but more complex to implement and maintain.
 // It's better suited for projects where fee estimation accuracy is important and where fees can vary significantly depending on the transaction type.
 func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *big.Int) (*big.Int, error) {
+	logger := logging.With(zap.String("fromAddress", fromAddress), zap.String("toAddress", toAddress), zap.String("amount", amount.String()))
+	logger.Info("Estimating transaction fees")
+
 	// Constants for approximate estimation (in nanoTON)
 	const (
 		baseStorageFee = 10000000 // 0.01 TON
@@ -122,10 +175,12 @@ func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *b
 	// Parsing addresses
 	_, err := address.ParseAddr(fromAddress)
 	if err != nil {
+		logger.Error("Invalid sender address", zap.Error(err))
 		return nil, fmt.Errorf("invalid sender address: %w", err)
 	}
 	_, err = address.ParseAddr(toAddress)
 	if err != nil {
+		logger.Error("Invalid recipient address", zap.Error(err))
 		return nil, fmt.Errorf("invalid recipient address: %w", err)
 	}
 
@@ -139,6 +194,7 @@ func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *b
 		gasFee,
 	)
 
+	logger.Info("Fee estimation completed", zap.String("estimatedFee", totalFee.String()))
 	return totalFee, nil
 }
 
@@ -177,6 +233,9 @@ func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *b
 */
 
 func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount string, comment string) error {
+	logger := logging.With(zap.String("toAddress", toAddress), zap.String("amount", amount))
+	logger.Info("Initiating transaction")
+
 	// Creating child context with timeout
 	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Minute)
 	defer cancel()
@@ -184,12 +243,14 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 	// Parsing recipient address
 	to, err := address.ParseAddr(toAddress)
 	if err != nil {
+		logger.Error("Invalid recipient address", zap.Error(err))
 		return fmt.Errorf("invalid recipient address: %w", err)
 	}
 
 	// Parsing amount
 	coins, err := tlb.FromTON(amount)
 	if err != nil {
+		logger.Error("Invalid amount", zap.Error(err))
 		return fmt.Errorf("invalid amount: %w", err)
 	}
 
@@ -197,42 +258,57 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 	seedWords := strings.Split(privateKey, " ")
 	w, err := wallet.FromSeed(c.api, seedWords, wallet.V3R2)
 	if err != nil {
+		logger.Error("Failed to create wallet from seed", zap.Error(err))
 		return fmt.Errorf("failed to create wallet from seed: %w", err)
 	}
 
 	// Checking balance sufficiency
 	balance, err := c.GetBalance(w.Address().String())
 	if err != nil {
+		logger.Error("Failed to get balance", zap.Error(err))
 		return fmt.Errorf("failed to get balance: %w", err)
 	}
 	balanceCoins, err := tlb.FromTON(balance)
 	if err != nil {
+		logger.Error("Invalid balance value", zap.Error(err))
 		return fmt.Errorf("invalid balance value: %w", err)
 	}
 	if balanceCoins.Nano().Cmp(coins.Nano()) < 0 {
+		logger.Warn("Insufficient balance for transaction",
+			zap.String("balance", balance),
+			zap.String("requiredAmount", amount))
 		return fmt.Errorf("insufficient balance for transaction")
 	}
 
 	// Sending transaction with context
 	err = w.Transfer(ctx, to, coins, comment, true)
 	if err != nil {
+		logger.Error("Failed to send transaction", zap.Error(err))
 		return fmt.Errorf("failed to send transaction: %w", err)
 	}
 
+	logger.Info("Transaction sent successfully")
 	return nil
 }
 
 func (c *TonClient) RecoverWalletFromSeed(seedPhrase string) (*Wallet, error) {
+	logger := logging.GetLogger()
+	logger.Info("Recovering wallet from seed phrase")
+
 	seedWords := strings.Split(seedPhrase, " ")
 	w, err := wallet.FromSeed(c.api, seedWords, wallet.V3R2)
 	if err != nil {
+		logger.Error("Failed to recover wallet from seed", zap.Error(err))
 		return nil, fmt.Errorf("failed to recover wallet from seed: %w", err)
 	}
 
-	return &Wallet{
+	recoveredWallet := &Wallet{
 		Address:    w.Address().String(),
 		PrivateKey: seedPhrase,
-	}, nil
+	}
+
+	logger.Info("Wallet recovered successfully", zap.String("address", recoveredWallet.Address))
+	return recoveredWallet, nil
 }
 
 type Wallet struct {

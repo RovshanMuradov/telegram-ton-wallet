@@ -1,18 +1,25 @@
 package db
 
-import "log"
+import (
+	"github.com/rovshanmuradov/telegram-ton-wallet/internal/logging"
+	"go.uber.org/zap"
+)
 
 func CheckWalletsTableStructure() {
 	var result []struct {
 		ColumnName string
 		DataType   string
 	}
+
+	// Execute a query in the database
 	if err := DB.Raw("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'wallets'").Scan(&result).Error; err != nil {
-		log.Printf("Error getting wallets table structure: %v", err)
+		// Log the error using zap
+		logging.Error("Error getting wallets table structure", zap.Error(err))
 	} else {
-		log.Printf("Wallets table structure:")
+		// Log the table structure using zap
+		logging.Info("Wallets table structure:")
 		for _, col := range result {
-			log.Printf("Column: %s, Type: %s", col.ColumnName, col.DataType)
+			logging.Info("Column info", zap.String("Column", col.ColumnName), zap.String("Type", col.DataType))
 		}
 	}
 }
@@ -22,12 +29,16 @@ func CheckWalletsTableIndexes() {
 		IndexName string
 		IndexDef  string
 	}
+
+	// Execute a query to the database
 	if err := DB.Raw("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'wallets'").Scan(&result).Error; err != nil {
-		log.Printf("Error checking wallets table indexes: %v", err)
+		// Log the error using zap
+		logging.Error("Error checking wallets table indexes", zap.Error(err))
 	} else {
-		log.Printf("Wallets table indexes:")
+		// Log table indexes using zap
+		logging.Info("Wallets table indexes:")
 		for _, idx := range result {
-			log.Printf("Index name: %s, Definition: %s", idx.IndexName, idx.IndexDef)
+			logging.Info("Index info", zap.String("Index name", idx.IndexName), zap.String("Definition", idx.IndexDef))
 		}
 	}
 }
