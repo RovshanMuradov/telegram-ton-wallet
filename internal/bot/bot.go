@@ -1,7 +1,9 @@
+// internal/bot/bot.go
 package bot
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/config"
@@ -10,9 +12,15 @@ import (
 	"gopkg.in/tucnak/telebot.v2"
 )
 
+type userState struct {
+	state     string
+	timestamp time.Time
+}
 type Bot struct {
 	telegramBot *telebot.Bot
 	config      *config.Config
+	stateMutex  sync.RWMutex //need to add mutex
+	userStates  map[int64]userState
 }
 
 func NewBot(cfg *config.Config) (*Bot, error) {
@@ -27,6 +35,7 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 	return &Bot{
 		telegramBot: b,
 		config:      cfg,
+		userStates:  make(map[int64]userState),
 	}, nil
 }
 
@@ -34,6 +43,7 @@ func (b *Bot) Start() {
 	b.registerHandlers()
 	log.Println("The bot has been launched")
 	b.telegramBot.Start()
+
 }
 
 // sendMessage отправляет сообщение пользователю и логирует ошибку, если она возникает

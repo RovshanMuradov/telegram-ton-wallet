@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/logging"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/wallet"
@@ -24,6 +25,8 @@ func (b *Bot) registerHandlers() {
 	b.telegramBot.Handle("/history", b.handleHistory)
 	b.telegramBot.Handle("/backup", b.handleBackup)
 	b.telegramBot.Handle("/restore", b.handleRestore)
+	b.telegramBot.Handle(telebot.OnText, b.handleMessages)
+	b.telegramBot.Handle(telebot.OnDocument, b.handleMessages)
 }
 
 func (b *Bot) handleStart(m *telebot.Message) {
@@ -52,7 +55,7 @@ func (b *Bot) handleCreateWallet(m *telebot.Message) {
 	existingWallet, err := wallet.GetWalletByUserID(userID)
 	if err == nil && existingWallet != nil {
 		// Wallet already exists
-		logging.Info("Wallet already exists", zap.Int64("userID", userID), zap.String("walletAddress", existingWallet.Address))
+		logging.Info("Wallet already exists", zap.Int64("userID", userID), zap.String("walletAddress", maskAddress(existingWallet.Address)))
 		b.sendMessage(m.Sender, fmt.Sprintf("You already have a wallet!\nAddress: %s", existingWallet.Address))
 		return
 	}
@@ -65,8 +68,19 @@ func (b *Bot) handleCreateWallet(m *telebot.Message) {
 		return
 	}
 
-	logging.Info("Wallet created successfully", zap.Int64("userID", userID), zap.String("walletAddress", w.Address))
+	logging.Info("Wallet created successfully",
+		zap.Int64("userID", userID),
+		zap.String("walletAddress", maskAddress(w.Address)),
+	)
+
 	b.sendMessage(m.Sender, fmt.Sprintf("Your wallet has been successfully created!\nAddress: %s", w.Address))
+}
+
+func maskAddress(address string) string {
+	if len(address) < 10 {
+		return address
+	}
+	return address[:5] + "..." + address[len(address)-5:]
 }
 
 func (b *Bot) handleBalance(m *telebot.Message) {
@@ -92,44 +106,17 @@ func (b *Bot) handleBalance(m *telebot.Message) {
 }
 
 func (b *Bot) handleSend(m *telebot.Message) {
-	b.sendMessage(m.Sender, "Please enter the recipient's address and amount separated by a space (e.g., EQAbcdefghijklmnopqrstuvwxyz1234567890abcdefghij 1.5):")
+	userID := int64(m.Sender.ID)
+	logging.Info("Send TON request", zap.Int64("userID", userID))
 
-	b.telegramBot.Handle(telebot.OnText, func(c *telebot.Message) {
-		args := strings.Split(c.Text, " ")
-		if len(args) != 2 {
-			b.sendMessage(c.Sender, "Invalid format. Please try again.")
-			return
-		}
+	b.stateMutex.Lock()
+	b.userStates[userID] = userState{
+		state:     "awaiting_send_details",
+		timestamp: time.Now(),
+	}
+	b.stateMutex.Unlock()
 
-		recipientAddress := args[0]
-		amount := args[1]
-
-		if err := wallet.ValidateAddress(recipientAddress); err != nil {
-			logging.Error("Invalid recipient address", zap.String("address", recipientAddress), zap.Error(err))
-			b.sendMessage(c.Sender, fmt.Sprintf("Invalid recipient address: %v", err))
-			return
-		}
-
-		if err := wallet.ValidateAmount(amount); err != nil {
-			logging.Error("Invalid amount", zap.String("amount", amount), zap.Error(err))
-			b.sendMessage(c.Sender, fmt.Sprintf("Invalid amount: %v", err))
-			return
-		}
-
-		userID := int64(c.Sender.ID)
-		comment := ""
-
-		err := wallet.SendTON(userID, recipientAddress, amount, comment, b.config)
-		if err != nil {
-			logging.Error("Error sending transaction", zap.Int64("userID", userID), zap.Error(err))
-			b.sendMessage(c.Sender, fmt.Sprintf("Error sending transaction: %v", err))
-			return
-		}
-
-		b.sendMessage(c.Sender, fmt.Sprintf("Transaction sent successfully! Sent %s TON to address %s", amount, recipientAddress))
-
-		b.registerHandlers()
-	})
+	b.sendMessage(m.Sender, "Please enter the recipient's address and amount separated by a space (e.g., EQAbcdef... 1.5):")
 }
 
 func (b *Bot) handleReceive(m *telebot.Message) {
@@ -224,42 +211,137 @@ func (b *Bot) handleBackup(m *telebot.Message) {
 	}
 }
 
+func (b *Bot) hasStateExpired(userState userState) bool {
+	return time.Since(userState.timestamp) > 5*time.Minute
+}
+
 func (b *Bot) handleRestore(m *telebot.Message) {
+	userID := int64(m.Sender.ID)
+	logging.Info("Restore wallet request", zap.Int64("userID", userID))
+
+	// Устанавливаем состояние пользователя с блокировкой мьютекса
+	b.stateMutex.Lock()
+	b.userStates[userID] = userState{
+		state:     "awaiting_backup_file",
+		timestamp: time.Now(),
+	}
+	b.stateMutex.Unlock()
+
 	b.sendMessage(m.Sender, "Please send me the backup file.")
+}
 
-	b.telegramBot.Handle(telebot.OnDocument, func(m *telebot.Message) {
-		userID := int64(m.Sender.ID)
+func (b *Bot) handleMessages(m *telebot.Message) {
+	userID := int64(m.Sender.ID)
 
-		// Download the file
-		fileInfo, err := b.telegramBot.GetFile(m.Document.MediaFile())
-		if err != nil {
-			logging.Error("Error accessing backup file", zap.Int64("userID", userID), zap.Error(err))
-			b.sendMessage(m.Sender, "Error accessing backup file")
-			return
+	b.stateMutex.RLock()
+	userState, exists := b.userStates[userID]
+	b.stateMutex.RUnlock()
+
+	if !exists {
+		// Если состояние не установлено, игнорируем сообщение или обрабатываем как обычную команду
+		return
+	}
+
+	// Проверяем тайм-аут
+	if b.hasStateExpired(userState) {
+		// Сбрасываем состояние
+		b.stateMutex.Lock()
+		delete(b.userStates, userID)
+		b.stateMutex.Unlock()
+		b.sendMessage(m.Sender, "Session timed out. Please start again.")
+		return
+	}
+
+	// Обрабатываем сообщение в соответствии с состоянием
+	switch userState.state {
+	case "awaiting_send_details":
+		b.processSendDetails(m)
+	case "awaiting_backup_file":
+		if m.Document != nil {
+			b.processBackupFile(m)
+		} else {
+			b.sendMessage(m.Sender, "Please send a valid backup file.")
 		}
+	// Добавьте другие состояния по мере необходимости
+	default:
+		b.sendMessage(m.Sender, "I didn't understand that command. Use /help to see available commands.")
+	}
+}
 
-		// Create a buffer to store the file contents
-		var buf bytes.Buffer
+func (b *Bot) processSendDetails(m *telebot.Message) {
+	userID := int64(m.Sender.ID)
+	args := strings.Split(m.Text, " ")
+	if len(args) != 2 {
+		b.sendMessage(m.Sender, "Invalid format. Please try again.")
+		return
+	}
 
-		// Download the file content into the buffer
-		if _, err := io.Copy(&buf, fileInfo); err != nil {
-			logging.Error("Error reading backup file", zap.Int64("userID", userID), zap.Error(err))
-			b.sendMessage(m.Sender, "Error reading backup file")
-			return
-		}
+	recipientAddress := args[0]
+	amount := args[1]
 
-		// Get the backup data from the buffer
-		backupData := buf.Bytes()
+	if err := wallet.ValidateAddress(recipientAddress); err != nil {
+		logging.Error("Invalid recipient address", zap.String("address", recipientAddress), zap.Error(err))
+		b.sendMessage(m.Sender, fmt.Sprintf("Invalid recipient address: %v", err))
+		return
+	}
 
-		// Restore the wallet
-		err = wallet.RestoreWalletFromBackup(userID, backupData, b.config)
-		if err != nil {
-			logging.Error("Error restoring wallet", zap.Int64("userID", userID), zap.Error(err))
-			b.sendMessage(m.Sender, fmt.Sprintf("Error restoring wallet: %v", err))
-			return
-		}
+	if err := wallet.ValidateAmount(amount); err != nil {
+		logging.Error("Invalid amount", zap.String("amount", amount), zap.Error(err))
+		b.sendMessage(m.Sender, fmt.Sprintf("Invalid amount: %v", err))
+		return
+	}
 
-		b.sendMessage(m.Sender, "Wallet successfully restored!")
-		b.registerHandlers() // Re-register handlers to stop listening for documents
-	})
+	comment := ""
+
+	err := wallet.SendTON(userID, recipientAddress, amount, comment, b.config)
+	if err != nil {
+		logging.Error("Error sending transaction", zap.Int64("userID", userID), zap.Error(err))
+		b.sendMessage(m.Sender, fmt.Sprintf("Error sending transaction: %v", err))
+		return
+	}
+
+	b.sendMessage(m.Sender, fmt.Sprintf("Transaction sent successfully! Sent %s TON to address %s", amount, recipientAddress))
+
+	// Сбрасываем состояние пользователя
+	b.stateMutex.Lock()
+	delete(b.userStates, userID)
+	b.stateMutex.Unlock()
+}
+
+func (b *Bot) processBackupFile(m *telebot.Message) {
+	userID := int64(m.Sender.ID)
+
+	// Загрузка файла
+	fileInfo, err := b.telegramBot.GetFile(m.Document.MediaFile())
+	if err != nil {
+		logging.Error("Error accessing backup file", zap.Int64("userID", userID), zap.Error(err))
+		b.sendMessage(m.Sender, "Error accessing backup file")
+		return
+	}
+
+	var buf bytes.Buffer
+
+	// Копируем содержимое файла в буфер
+	if _, err := io.Copy(&buf, fileInfo); err != nil {
+		logging.Error("Error reading backup file", zap.Int64("userID", userID), zap.Error(err))
+		b.sendMessage(m.Sender, "Error reading backup file")
+		return
+	}
+
+	backupData := buf.Bytes()
+
+	// Восстанавливаем кошелек
+	err = wallet.RestoreWalletFromBackup(userID, backupData, b.config)
+	if err != nil {
+		logging.Error("Error restoring wallet", zap.Int64("userID", userID), zap.Error(err))
+		b.sendMessage(m.Sender, fmt.Sprintf("Error restoring wallet: %v", err))
+		return
+	}
+
+	b.sendMessage(m.Sender, "Wallet successfully restored!")
+
+	// Сбрасываем состояние пользователя
+	b.stateMutex.Lock()
+	delete(b.userStates, userID)
+	b.stateMutex.Unlock()
 }
