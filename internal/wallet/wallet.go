@@ -17,6 +17,13 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	TransactionStarted    = "Transaction process started"
+	TransactionInProgress = "Transaction in progress"
+	TransactionCompleted  = "Transaction completed successfully"
+	TransactionFailed     = "Transaction failed"
+)
+
 func CreateWallet(userID int64, cfg *config.Config) (*db.Wallet, error) {
 	logger := logging.With(zap.Int64("userID", userID))
 	logger.Info("Starting wallet creation")
@@ -254,8 +261,8 @@ func ValidateAddress(address string) error {
 	logger := logging.With(zap.String("address", address))
 	logger.Debug("Validating TON address")
 
-	// Basic TON address validation (may need refinement)
-	match, _ := regexp.MatchString("^[0-9a-fA-F]{48}$", address)
+	// TON address validation
+	match, _ := regexp.MatchString("^EQ[0-9a-zA-Z_-]{46}$", address)
 	if !match {
 		logger.Warn("Invalid TON address format")
 		return fmt.Errorf("invalid TON address format")
@@ -346,68 +353,71 @@ func CheckSuspiciousActivity(wallet *db.Wallet, amount string) bool {
 
 	return isSuspicious
 }
-
-func SendTON(userID int64, toAddress string, amount string, comment string, cfg *config.Config) error {
+func SendTON(userID int64, toAddress string, amount string, comment string, cfg *config.Config) (string, error) {
 	logger := logging.With(zap.Int64("userID", userID), zap.String("toAddress", toAddress), zap.String("amount", amount))
-	logger.Info("Initiating TON transfer")
+	logger.Info(TransactionStarted)
+
+	start := time.Now()
 
 	if err := ValidateAddress(toAddress); err != nil {
-		logger.Error("Invalid address", zap.Error(err))
-		return err
+		logger.Error(TransactionFailed, zap.Error(err))
+		return "", err
 	}
 	if err := ValidateAmount(amount); err != nil {
-		logger.Error("Invalid amount", zap.Error(err))
-		return err
+		logger.Error(TransactionFailed, zap.Error(err))
+		return "", err
 	}
 
 	wallet, err := GetWalletByUserID(userID)
 	if err != nil {
-		logger.Error("Failed to get user's wallet", zap.Error(err))
-		return fmt.Errorf("failed to get user's wallet: %w", err)
+		logger.Error(TransactionFailed, zap.Error(err))
+		return "", fmt.Errorf("failed to get user's wallet: %w", err)
 	}
 
 	if wallet.Locked {
 		logger.Warn("Wallet is locked")
-		return fmt.Errorf("wallet is locked")
+		return "", fmt.Errorf("wallet is locked")
 	}
 
 	if CheckSuspiciousActivity(wallet, amount) {
 		logger.Warn("Suspicious activity detected")
 		if err := LockWallet(wallet); err != nil {
 			logger.Error("Failed to lock wallet", zap.Error(err))
-			return err
 		}
-		return fmt.Errorf("transaction blocked due to suspicious activity")
+		return "", fmt.Errorf("transaction blocked due to suspicious activity")
 	}
 
 	privateKey, err := DecryptPrivateKey(wallet.PrivateKey, cfg.EncryptionKey)
 	if err != nil {
-		logger.Error("Failed to decrypt private key", zap.Error(err))
-		return fmt.Errorf("failed to decrypt private key: %w", err)
+		logger.Error(TransactionFailed, zap.Error(err))
+		return "", fmt.Errorf("failed to decrypt private key: %w", err)
 	}
 
 	tonClient, err := tonutils.NewTonClient(cfg)
 	if err != nil {
-		logger.Error("Failed to create TonClient", zap.Error(err))
-		return fmt.Errorf("failed to create TonClient: %w", err)
+		logger.Error(TransactionFailed, zap.Error(err))
+		return "", fmt.Errorf("failed to create TonClient: %w", err)
 	}
 
-	err = utils.Retry(3, time.Second, func() error {
-		return tonClient.SendTransaction(privateKey, toAddress, amount, comment)
-	})
+	logger.Info(TransactionInProgress)
 
+	txHash, err := tonClient.SendTransaction(privateKey, toAddress, amount, comment)
 	if err != nil {
-		logger.Error("Failed to send transaction", zap.Error(err))
-		return fmt.Errorf("failed to send transaction: %w", err)
+		logger.Error(TransactionFailed, zap.Error(err))
+		return "", fmt.Errorf("failed to send transaction: %w", err)
 	}
 
 	if err := UpdateWalletBalance(wallet, cfg); err != nil {
 		logger.Error("Failed to update wallet balance", zap.Error(err))
-		// We don't return an error here as the transaction has already been sent
+		// Не возвращаем ошибку, так как транзакция уже отправлена
 	}
 
-	logger.Info("Transaction sent successfully")
-	return nil
+	duration := time.Since(start)
+	logger.Info(TransactionCompleted,
+		zap.String("transactionHash", txHash),
+		zap.Duration("duration", duration))
+
+	return txHash, nil
 }
 
 func GetTransactionHistory(wallet *db.Wallet, cfg *config.Config) ([]db.Transaction, error) {

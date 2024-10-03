@@ -3,6 +3,7 @@ package tonutils
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/ton"
 	"github.com/xssnick/tonutils-go/ton/wallet"
+	"github.com/xssnick/tonutils-go/tvm/cell"
 	"go.uber.org/zap"
 )
 
@@ -232,7 +234,7 @@ func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *b
 }
 */
 
-func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount string, comment string) error {
+func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount string, comment string) (string, error) {
 	logger := logging.With(zap.String("toAddress", toAddress), zap.String("amount", amount))
 	logger.Info("Initiating transaction")
 
@@ -244,14 +246,14 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 	to, err := address.ParseAddr(toAddress)
 	if err != nil {
 		logger.Error("Invalid recipient address", zap.Error(err))
-		return fmt.Errorf("invalid recipient address: %w", err)
+		return "", fmt.Errorf("invalid recipient address: %w", err)
 	}
 
 	// Parsing amount
 	coins, err := tlb.FromTON(amount)
 	if err != nil {
 		logger.Error("Invalid amount", zap.Error(err))
-		return fmt.Errorf("invalid amount: %w", err)
+		return "", fmt.Errorf("invalid amount: %w", err)
 	}
 
 	// Creating wallet from seed phrase
@@ -259,36 +261,51 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 	w, err := wallet.FromSeed(c.api, seedWords, wallet.V3R2)
 	if err != nil {
 		logger.Error("Failed to create wallet from seed", zap.Error(err))
-		return fmt.Errorf("failed to create wallet from seed: %w", err)
+		return "", fmt.Errorf("failed to create wallet from seed: %w", err)
 	}
 
 	// Checking balance sufficiency
 	balance, err := c.GetBalance(w.Address().String())
 	if err != nil {
 		logger.Error("Failed to get balance", zap.Error(err))
-		return fmt.Errorf("failed to get balance: %w", err)
+		return "", fmt.Errorf("failed to get balance: %w", err)
 	}
 	balanceCoins, err := tlb.FromTON(balance)
 	if err != nil {
 		logger.Error("Invalid balance value", zap.Error(err))
-		return fmt.Errorf("invalid balance value: %w", err)
+		return "", fmt.Errorf("invalid balance value: %w", err)
 	}
 	if balanceCoins.Nano().Cmp(coins.Nano()) < 0 {
 		logger.Warn("Insufficient balance for transaction",
 			zap.String("balance", balance),
 			zap.String("requiredAmount", amount))
-		return fmt.Errorf("insufficient balance for transaction")
+		return "", fmt.Errorf("insufficient balance for transaction")
 	}
 
-	// Sending transaction with context
-	err = w.Transfer(ctx, to, coins, comment, true)
+	// Convert comment to cell.Cell
+	commentCell := cell.BeginCell().MustStoreUInt(0, 32).MustStoreStringSnake(comment).EndCell()
+
+	// Using SendWaitTransaction
+	tx, block, err := w.SendWaitTransaction(ctx, &wallet.Message{
+		Mode: 1, // 1 means pay fees separately
+		InternalMessage: &tlb.InternalMessage{
+			Bounce:  true,
+			DstAddr: to,
+			Amount:  coins,
+			Body:    commentCell,
+		},
+	})
 	if err != nil {
 		logger.Error("Failed to send transaction", zap.Error(err))
-		return fmt.Errorf("failed to send transaction: %w", err)
+		return "", fmt.Errorf("failed to send transaction: %w", err)
 	}
 
-	logger.Info("Transaction sent successfully")
-	return nil
+	txHash := hex.EncodeToString(tx.Hash)
+	logger.Info("Transaction sent successfully",
+		zap.String("txHash", txHash),
+		zap.Uint32("blockSeqNo", block.SeqNo))
+
+	return txHash, nil
 }
 
 func (c *TonClient) RecoverWalletFromSeed(seedPhrase string) (*Wallet, error) {

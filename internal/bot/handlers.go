@@ -279,33 +279,48 @@ func (b *Bot) processSendDetails(m *telebot.Message) {
 	recipientAddress := args[0]
 	amount := args[1]
 
-	if err := wallet.ValidateAddress(recipientAddress); err != nil {
-		logging.Error("Invalid recipient address", zap.String("address", recipientAddress), zap.Error(err))
-		b.sendMessage(m.Sender, fmt.Sprintf("Invalid recipient address: %v", err))
-		return
-	}
+	logger := logging.With(
+		zap.Int64("userID", userID),
+		zap.String("recipientAddress", recipientAddress),
+		zap.String("amount", amount),
+	)
 
-	if err := wallet.ValidateAmount(amount); err != nil {
-		logging.Error("Invalid amount", zap.String("amount", amount), zap.Error(err))
-		b.sendMessage(m.Sender, fmt.Sprintf("Invalid amount: %v", err))
-		return
-	}
+	logger.Info("Processing send request")
 
-	comment := ""
-
-	err := wallet.SendTON(userID, recipientAddress, amount, comment, b.config)
+	txHash, err := wallet.SendTON(userID, recipientAddress, amount, "", b.config)
 	if err != nil {
-		logging.Error("Error sending transaction", zap.Int64("userID", userID), zap.Error(err))
+		logger.Error("Error sending transaction", zap.Error(err))
 		b.sendMessage(m.Sender, fmt.Sprintf("Error sending transaction: %v", err))
 		return
 	}
 
-	b.sendMessage(m.Sender, fmt.Sprintf("Transaction sent successfully! Sent %s TON to address %s", amount, recipientAddress))
+	// Получаем обновленный баланс
+	updatedWallet, err := wallet.GetWalletByUserID(userID)
+	if err != nil {
+		logger.Error("Error getting updated wallet info", zap.Error(err))
+	}
+
+	message := fmt.Sprintf("Transaction sent successfully!\n"+
+		"Amount: %s TON\n"+
+		"To: %s\n"+
+		"Transaction Hash: %s\n",
+		amount, recipientAddress, txHash)
+
+	if updatedWallet != nil {
+		message += fmt.Sprintf("Your new balance: %s TON", updatedWallet.Balance)
+	}
+
+	b.sendMessage(m.Sender, message)
 
 	// Сбрасываем состояние пользователя
 	b.stateMutex.Lock()
 	delete(b.userStates, userID)
 	b.stateMutex.Unlock()
+
+	logger.Info("Send process completed successfully",
+		zap.String("txHash", txHash),
+		zap.String("recipientAddress", recipientAddress),
+		zap.String("amount", amount))
 }
 
 func (b *Bot) processBackupFile(m *telebot.Message) {
