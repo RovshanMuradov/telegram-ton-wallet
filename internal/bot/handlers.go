@@ -3,17 +3,14 @@ package bot
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/rovshanmuradov/telegram-ton-wallet/internal/db"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/logging"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/wallet"
-	"github.com/rovshanmuradov/telegram-ton-wallet/pkg/tonutils"
 	"go.uber.org/zap"
 	"gopkg.in/tucnak/telebot.v2"
 )
@@ -110,8 +107,10 @@ func (b *Bot) handleBalance(m *telebot.Message) {
 
 func (b *Bot) handleSend(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
-	logging.Info("Send TON request", zap.Int64("userID", userID))
+	logger := logging.With(zap.Int64("userID", userID))
+	logger.Info("Send TON request")
 
+	// Устанавливаем состояние пользователя
 	b.stateMutex.Lock()
 	b.userStates[userID] = userState{
 		state:     "awaiting_send_details",
@@ -119,6 +118,7 @@ func (b *Bot) handleSend(m *telebot.Message) {
 	}
 	b.stateMutex.Unlock()
 
+	// Запрашиваем детали транзакции
 	b.sendMessage(m.Sender, "Please enter the recipient's address and amount separated by a space (e.g., EQAbcdef... 1.5):")
 }
 
@@ -273,97 +273,48 @@ func (b *Bot) handleMessages(m *telebot.Message) {
 
 func (b *Bot) processSendDetails(m *telebot.Message) {
 	userID := int64(m.Sender.ID)
-	args := strings.Split(m.Text, " ")
-	if len(args) != 2 {
+	logger := logging.With(zap.Int64("userID", userID))
+
+	// Разбираем введенные пользователем данные
+	parts := strings.Split(m.Text, " ")
+	if len(parts) != 2 {
 		b.sendMessage(m.Sender, "Invalid format. Please try again.")
 		return
 	}
+	toAddress, amount := parts[0], parts[1]
 
-	recipientAddress := args[0]
-	amount := args[1]
-
-	logger := logging.With(
-		zap.Int64("userID", userID),
-		zap.String("recipientAddress", recipientAddress),
-		zap.String("amount", amount),
-	)
-
-	logger.Info("Processing send request")
-
-	txHash, err := wallet.SendTON(userID, recipientAddress, amount, "", b.config)
+	// Отправляем транзакцию
+	txHash, err := wallet.SendTON(userID, toAddress, amount, "", b.config)
 	if err != nil {
 		logger.Error("Error sending transaction", zap.Error(err))
 		b.sendMessage(m.Sender, fmt.Sprintf("Error sending transaction: %v", err))
 		return
 	}
 
-	// Retrieve the user's wallet
+	// Получаем обновленный кошелек пользователя
 	userWallet, err := wallet.GetWalletByUserID(userID)
 	if err != nil {
-		logger.Error("Error retrieving user wallet", zap.Error(err))
-		b.sendMessage(m.Sender, "Error retrieving your wallet information.")
+		logger.Error("Error getting user wallet", zap.Error(err))
+		b.sendMessage(m.Sender, "Error retrieving wallet information.")
 		return
 	}
 
-	// Check the transaction status
-	tonClient, err := tonutils.NewTonClient(b.config)
+	// Получаем обновленный баланс
+	updatedBalance, err := wallet.GetBalance(userWallet.Address, b.config)
 	if err != nil {
-		logger.Error("Error creating TON client", zap.Error(err))
-		b.sendMessage(m.Sender, "Error checking transaction status. Please check your balance later.")
-		return
+		logger.Error("Error getting updated balance", zap.Error(err))
+		// Не возвращаем ошибку, так как транзакция уже отправлена
 	}
 
-	var transactionStatus *db.TransactionStatus
-	for i := 0; i < 5; i++ { // Try 5 times
-		time.Sleep(10 * time.Second)
-		transactionStatus, err = tonClient.CheckTransactionStatus(context.Background(), userWallet.Address, txHash)
-		if err != nil {
-			logger.Error("Error checking transaction status", zap.Error(err))
-			continue
-		}
-		if transactionStatus.Status == "success" || transactionStatus.Status == "failed" {
-			break
-		}
-	}
-
-	// Get the updated balance
-	updatedWallet, err := wallet.GetWalletByUserID(userID)
-	if err != nil {
-		logger.Error("Error getting updated wallet info", zap.Error(err))
-	}
-
-	var message string
-	if transactionStatus.Status == "success" {
-		message = fmt.Sprintf("Transaction sent successfully!\n"+
-			"Amount: %s TON\n"+
-			"To: %s\n"+
-			"Transaction Hash: %s\n",
-			amount, recipientAddress, txHash)
-	} else {
-		message = fmt.Sprintf("Transaction may have failed or is still pending.\n"+
-			"Amount: %s TON\n"+
-			"To: %s\n"+
-			"Transaction Hash: %s\n"+
-			"Please check your balance later.\n",
-			amount, recipientAddress, txHash)
-	}
-
-	if updatedWallet != nil {
-		message += fmt.Sprintf("Your current balance: %s TON", updatedWallet.Balance)
-	}
-
+	// Формируем сообщение о результате транзакции
+	message := fmt.Sprintf("Transaction sent successfully!\nAmount: %s TON\nTo: %s\nTransaction Hash: %s\nUpdated Balance: %s TON",
+		amount, toAddress, txHash, updatedBalance)
 	b.sendMessage(m.Sender, message)
 
-	// Reset the user's state
+	// Сбрасываем состояние пользователя
 	b.stateMutex.Lock()
 	delete(b.userStates, userID)
 	b.stateMutex.Unlock()
-
-	logger.Info("Send process completed",
-		zap.String("status", transactionStatus.Status),
-		zap.String("txHash", txHash),
-		zap.String("recipientAddress", recipientAddress),
-		zap.String("amount", amount))
 }
 
 func (b *Bot) processBackupFile(m *telebot.Message) {

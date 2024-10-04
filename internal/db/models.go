@@ -1,7 +1,9 @@
 // internal/db/models.go
 package db
 
-import "time"
+import (
+	"time"
+)
 
 type User struct {
 	ID         int64 `gorm:"primary_key"`

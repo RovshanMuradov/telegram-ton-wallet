@@ -164,46 +164,46 @@ func (c *TonClient) GetBalance(addressStr string) (string, error) {
 
 // More flexible and potentially more accurate, but more complex to implement and maintain.
 // It's better suited for projects where fee estimation accuracy is important and where fees can vary significantly depending on the transaction type.
-func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *big.Int) (*big.Int, error) {
-	logger := logging.With(zap.String("fromAddress", fromAddress), zap.String("toAddress", toAddress), zap.String("amount", amount.String()))
-	logger.Info("Estimating transaction fees")
+// func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *big.Int) (*big.Int, error) {
+// 	logger := logging.With(zap.String("fromAddress", fromAddress), zap.String("toAddress", toAddress), zap.String("amount", amount.String()))
+// 	logger.Info("Estimating transaction fees")
 
-	// Constants for approximate estimation (in nanoTON)
-	const (
-		baseStorageFee = 10000000 // 0.01 TON
-		baseComputeFee = 10000000 // 0.01 TON
-		gasPerByte     = 1000     // 0.000001 TON per byte
-	)
+// 	// Constants for approximate estimation (in nanoTON)
+// 	const (
+// 		baseStorageFee = 20000000 // 0.02 TON
+// 		baseComputeFee = 20000000 // 0.02 TON
+// 		gasPerByte     = 2000     // 0.000002 TON per byte
+// 	)
 
-	// Parsing addresses
-	_, err := address.ParseAddr(fromAddress)
-	if err != nil {
-		logger.Error("Invalid sender address", zap.Error(err))
-		return nil, fmt.Errorf("invalid sender address: %w", err)
-	}
-	_, err = address.ParseAddr(toAddress)
-	if err != nil {
-		logger.Error("Invalid recipient address", zap.Error(err))
-		return nil, fmt.Errorf("invalid recipient address: %w", err)
-	}
+// 	// Parsing addresses
+// 	_, err := address.ParseAddr(fromAddress)
+// 	if err != nil {
+// 		logger.Error("Invalid sender address", zap.Error(err))
+// 		return nil, fmt.Errorf("invalid sender address: %w", err)
+// 	}
+// 	_, err = address.ParseAddr(toAddress)
+// 	if err != nil {
+// 		logger.Error("Invalid recipient address", zap.Error(err))
+// 		return nil, fmt.Errorf("invalid recipient address: %w", err)
+// 	}
 
-	// Estimating message size (approximately)
-	messageSize := 100 + (amount.BitLen() / 8)
+// 	// Estimating message size (approximately)
+// 	messageSize := 100 + (amount.BitLen() / 8)
 
-	// Calculating approximate fee
-	gasFee := new(big.Int).SetUint64(uint64(messageSize) * gasPerByte)
-	totalFee := new(big.Int).Add(
-		new(big.Int).SetUint64(baseStorageFee+baseComputeFee),
-		gasFee,
-	)
+// 	// Calculating approximate fee
+// 	gasFee := new(big.Int).SetUint64(uint64(messageSize) * gasPerByte)
+// 	totalFee := new(big.Int).Add(
+// 		new(big.Int).SetUint64(baseStorageFee+baseComputeFee),
+// 		gasFee,
+// 	)
 
-	logger.Info("Fee estimation completed", zap.String("estimatedFee", totalFee.String()))
-	return totalFee, nil
-}
+// 	logger.Info("Fee estimation completed", zap.String("estimatedFee", totalFee.String()))
+// 	return totalFee, nil
+// }
 
 // Simpler, faster, but less accurate.
 // It may be suitable for projects where speed is more important than fee estimation accuracy, or where fees are relatively stable and predictable.
-/*func (c *TonClient) EstimateFees(fromSeedPhrase string, toAddress string, amount *big.Int) (*big.Int, error) {
+func (c *TonClient) EstimateFees(fromSeedPhrase string, toAddress string, amount *big.Int) (*big.Int, error) {
 	// Parsing recipient address
 	toAddr, err := address.ParseAddr(toAddress)
 	if err != nil {
@@ -229,38 +229,48 @@ func (c *TonClient) EstimateFees(fromAddress string, toAddress string, amount *b
 	}
 
 	// Using fixed fee
-	fixedFee := big.NewInt(10000000) // 0.01 TON
+	fixedFee := big.NewInt(100000000) // 0.01 TON
 
 	return fixedFee, nil
 }
-*/
+
+// type Coins struct {
+// 	Nano *big.Int
+// }
 
 func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount string, comment string) (string, error) {
 	logger := logging.With(zap.String("toAddress", toAddress), zap.String("amount", amount))
 	logger.Info("Initiating transaction")
 
-	// Creating child context with timeout to ensure the operation does not hang indefinitely
 	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Minute)
 	defer cancel()
 
-	// Parsing recipient address from string to address format
-	logger.Debug("Parsing recipient address", zap.String("toAddress", toAddress))
+	// Парсинг адреса получателя
 	to, err := address.ParseAddr(toAddress)
 	if err != nil {
 		logger.Error("Invalid recipient address", zap.Error(err))
 		return "", fmt.Errorf("invalid recipient address: %w", err)
 	}
 
-	// Parsing amount from string to TON coin format
-	logger.Debug("Parsing amount", zap.String("amount", amount))
-	coins, err := tlb.FromTON(amount)
+	// Парсинг суммы перевода
+	amountFloat, _, err := big.ParseFloat(amount, 10, 0, big.ToZero)
 	if err != nil {
 		logger.Error("Invalid amount", zap.Error(err))
 		return "", fmt.Errorf("invalid amount: %w", err)
 	}
 
-	// Creating wallet from seed phrase provided in privateKey
-	logger.Debug("Creating wallet from seed phrase")
+	amountNanoFloat := new(big.Float).Mul(amountFloat, big.NewFloat(1e9))
+	amountNanoInt := new(big.Int)
+	amountNanoFloat.Int(amountNanoInt)
+
+	// Создание объекта Coins
+	coins := tlb.FromNanoTON(amountNanoInt)
+	logger.Debug("Amount in coins", zap.String("amountNano", coins.Nano().String()))
+
+	// Логируем количество в нанотоннах
+	logger.Debug("Amount in coins", zap.String("amountNano", coins.Nano().String()))
+
+	// Создание кошелька из приватного ключа
 	seedWords := strings.Split(privateKey, " ")
 	w, err := wallet.FromSeed(c.api, seedWords, wallet.V3R2)
 	if err != nil {
@@ -268,36 +278,39 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 		return "", fmt.Errorf("failed to create wallet from seed: %w", err)
 	}
 
-	// Checking if the wallet balance is sufficient for the transaction
-	logger.Debug("Checking balance sufficiency", zap.String("walletAddress", w.Address().String()))
-	balance, err := c.GetBalance(w.Address().String())
+	// Проверка баланса
+	balanceStr, err := c.GetBalance(w.Address().String())
 	if err != nil {
 		logger.Error("Failed to get balance", zap.Error(err))
 		return "", fmt.Errorf("failed to get balance: %w", err)
 	}
-	logger.Debug("Balance retrieved", zap.String("balance", balance))
-	balanceCoins, err := tlb.FromTON(balance)
+
+	balanceFloat, _, err := big.ParseFloat(balanceStr, 10, 0, big.ToZero)
 	if err != nil {
 		logger.Error("Invalid balance value", zap.Error(err))
 		return "", fmt.Errorf("invalid balance value: %w", err)
 	}
-	if balanceCoins.Nano().Cmp(coins.Nano()) < 0 {
+
+	balanceNanoFloat := new(big.Float).Mul(balanceFloat, big.NewFloat(1e9))
+	balanceNanoInt := new(big.Int)
+	balanceNanoFloat.Int(balanceNanoInt)
+
+	if balanceNanoInt.Cmp(amountNanoInt) < 0 {
 		logger.Warn("Insufficient balance for transaction",
-			zap.String("balance", balance),
+			zap.String("balance", balanceStr),
 			zap.String("requiredAmount", amount))
 		return "", fmt.Errorf("insufficient balance for transaction")
 	}
 
-	// Convert comment to cell.Cell format required for the transaction body
-	logger.Debug("Converting comment to cell.Cell")
+	// Подготовка комментария
 	commentCell := cell.BeginCell().MustStoreUInt(0, 32).MustStoreStringSnake(comment).EndCell()
 
-	// Sending transaction using SendWaitTransaction method
+	// Отправка транзакции с правильным Mode
 	logger.Info("Sending transaction")
 	tx, block, err := w.SendWaitTransaction(ctx, &wallet.Message{
-		Mode: 1, // 1 means pay fees separately
+		Mode: 3,
 		InternalMessage: &tlb.InternalMessage{
-			Bounce:  true, // If the recipient address is incorrect, the funds will bounce back
+			Bounce:  true,
 			DstAddr: to,
 			Amount:  coins,
 			Body:    commentCell,
@@ -348,6 +361,53 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 		zap.Uint32("blockSeqNo", block.SeqNo))
 
 	return txHash, nil
+}
+
+func (c *TonClient) GetTransactionStatus(ctx context.Context, addr string, txHash string) (string, error) {
+	address, err := address.ParseAddr(addr)
+	if err != nil {
+		return "", fmt.Errorf("invalid address: %w", err)
+	}
+
+	// Получаем текущий блок
+	block, err := c.api.CurrentMasterchainInfo(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get current block: %w", err)
+	}
+
+	// Ищем транзакцию
+	tx, err := c.api.GetTransaction(ctx, block, address, 0) // 0 - последняя транзакция
+	if err != nil {
+		if err == ton.ErrNoTransactionsWereFound {
+			return "pending", nil
+		}
+		return "", fmt.Errorf("failed to get transaction: %w", err)
+	}
+
+	// Проверяем хэш транзакции
+	if hex.EncodeToString(tx.Hash) != txHash {
+		return "pending", nil
+	}
+
+	// Анализируем статус транзакции
+	status := analyzeTransactionStatus(tx)
+
+	return status, nil
+}
+
+func analyzeTransactionStatus(tx *tlb.Transaction) string {
+	// Здесь нужно реализовать логику анализа статуса транзакции
+	// Например:
+	if tx.Description.Description != nil {
+		switch desc := tx.Description.Description.(type) {
+		case tlb.TransactionDescriptionOrdinary:
+			if desc.Aborted {
+				return "failed"
+			}
+			return "confirmed"
+		}
+	}
+	return "unknown"
 }
 
 func (c *TonClient) CheckTransactionStatus(ctx context.Context, addrStr string, txHash string) (*db.TransactionStatus, error) {
