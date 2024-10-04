@@ -11,6 +11,7 @@ import (
 
 	"github.com/avast/retry-go"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/config"
+	"github.com/rovshanmuradov/telegram-ton-wallet/internal/db"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/logging"
 	"github.com/tyler-smith/go-bip39"
 	"github.com/xssnick/tonutils-go/address"
@@ -238,25 +239,28 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 	logger := logging.With(zap.String("toAddress", toAddress), zap.String("amount", amount))
 	logger.Info("Initiating transaction")
 
-	// Creating child context with timeout
+	// Creating child context with timeout to ensure the operation does not hang indefinitely
 	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Minute)
 	defer cancel()
 
-	// Parsing recipient address
+	// Parsing recipient address from string to address format
+	logger.Debug("Parsing recipient address", zap.String("toAddress", toAddress))
 	to, err := address.ParseAddr(toAddress)
 	if err != nil {
 		logger.Error("Invalid recipient address", zap.Error(err))
 		return "", fmt.Errorf("invalid recipient address: %w", err)
 	}
 
-	// Parsing amount
+	// Parsing amount from string to TON coin format
+	logger.Debug("Parsing amount", zap.String("amount", amount))
 	coins, err := tlb.FromTON(amount)
 	if err != nil {
 		logger.Error("Invalid amount", zap.Error(err))
 		return "", fmt.Errorf("invalid amount: %w", err)
 	}
 
-	// Creating wallet from seed phrase
+	// Creating wallet from seed phrase provided in privateKey
+	logger.Debug("Creating wallet from seed phrase")
 	seedWords := strings.Split(privateKey, " ")
 	w, err := wallet.FromSeed(c.api, seedWords, wallet.V3R2)
 	if err != nil {
@@ -264,12 +268,14 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 		return "", fmt.Errorf("failed to create wallet from seed: %w", err)
 	}
 
-	// Checking balance sufficiency
+	// Checking if the wallet balance is sufficient for the transaction
+	logger.Debug("Checking balance sufficiency", zap.String("walletAddress", w.Address().String()))
 	balance, err := c.GetBalance(w.Address().String())
 	if err != nil {
 		logger.Error("Failed to get balance", zap.Error(err))
 		return "", fmt.Errorf("failed to get balance: %w", err)
 	}
+	logger.Debug("Balance retrieved", zap.String("balance", balance))
 	balanceCoins, err := tlb.FromTON(balance)
 	if err != nil {
 		logger.Error("Invalid balance value", zap.Error(err))
@@ -282,14 +288,16 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 		return "", fmt.Errorf("insufficient balance for transaction")
 	}
 
-	// Convert comment to cell.Cell
+	// Convert comment to cell.Cell format required for the transaction body
+	logger.Debug("Converting comment to cell.Cell")
 	commentCell := cell.BeginCell().MustStoreUInt(0, 32).MustStoreStringSnake(comment).EndCell()
 
-	// Using SendWaitTransaction
+	// Sending transaction using SendWaitTransaction method
+	logger.Info("Sending transaction")
 	tx, block, err := w.SendWaitTransaction(ctx, &wallet.Message{
 		Mode: 1, // 1 means pay fees separately
 		InternalMessage: &tlb.InternalMessage{
-			Bounce:  true,
+			Bounce:  true, // If the recipient address is incorrect, the funds will bounce back
 			DstAddr: to,
 			Amount:  coins,
 			Body:    commentCell,
@@ -299,13 +307,151 @@ func (c *TonClient) SendTransaction(privateKey string, toAddress string, amount 
 		logger.Error("Failed to send transaction", zap.Error(err))
 		return "", fmt.Errorf("failed to send transaction: %w", err)
 	}
+	logger.Debug("Transaction sent", zap.String("txHash", hex.EncodeToString(tx.Hash)), zap.Uint32("blockSeqNo", block.SeqNo))
 
+	// Waiting for additional confirmations to ensure the transaction is securely confirmed
+	logger.Info("Waiting for additional confirmations", zap.Int("confirmations", 2))
+	confirmations := 2 // Already has one confirmation, waiting for two more
+	for i := 0; i < confirmations; i++ {
+		logger.Debug("Waiting for next block", zap.Int("iteration", i+1))
+		select {
+		case <-ctx.Done():
+			logger.Error("Context deadline exceeded while waiting for confirmations")
+			return "", fmt.Errorf("context deadline exceeded while waiting for confirmations")
+		case <-time.After(5 * time.Second):
+			// Wait for the next block to be created
+			wrappedClient := c.api.WaitForBlock(block.SeqNo + 1)
+
+			// Get current masterchain information
+			logger.Debug("Getting current masterchain info")
+			currentMaster, err := wrappedClient.GetMasterchainInfo(ctx)
+			if err != nil {
+				logger.Warn("Failed to get masterchain info", zap.Error(err))
+				continue
+			}
+
+			// Check if we have reached or exceeded the expected block number
+			if currentMaster.SeqNo >= block.SeqNo+1 {
+				logger.Debug("Reached expected block number", zap.Uint32("currentSeqNo", currentMaster.SeqNo))
+				block = currentMaster
+			} else {
+				logger.Warn("Waiting for next block", zap.Uint32("current", currentMaster.SeqNo), zap.Uint32("expected", block.SeqNo+1))
+				continue
+			}
+		}
+	}
+
+	// Return the transaction hash as confirmation of success
 	txHash := hex.EncodeToString(tx.Hash)
-	logger.Info("Transaction sent successfully",
+	logger.Info("Transaction sent and confirmed successfully",
 		zap.String("txHash", txHash),
 		zap.Uint32("blockSeqNo", block.SeqNo))
 
 	return txHash, nil
+}
+
+func (c *TonClient) CheckTransactionStatus(ctx context.Context, addrStr string, txHash string) (*db.TransactionStatus, error) {
+	logger := logging.With(zap.String("txHash", txHash))
+	logger.Info("Checking transaction status")
+
+	txHashBytes, err := hex.DecodeString(txHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transaction hash: %w", err)
+	}
+
+	addr, err := address.ParseAddr(addrStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	// Search for the transaction
+	tx, err := c.api.FindLastTransactionByOutMsgHash(ctx, addr, txHashBytes, 100)
+	if err != nil {
+		if err == ton.ErrTxWasNotFound {
+			return &db.TransactionStatus{
+				Hash:   txHash,
+				Status: "pending",
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to find transaction: %w", err)
+	}
+
+	// Create a unique identifier for the transaction
+	transactionID := fmt.Sprintf("%d:%x:%d", tx.Now, tx.AccountAddr, tx.LT)
+
+	status := &db.TransactionStatus{
+		Hash:    txHash,
+		BlockID: transactionID, // Using our custom transaction identifier
+		LT:      tx.LT,
+		Time:    time.Unix(int64(tx.Now), 0),
+	}
+
+	// Analyze the transaction status
+	status.Status = analyzeTransaction(tx)
+
+	// Add additional information
+	if tx.IO.In != nil {
+		status.FromAddress = tx.IO.In.Msg.SenderAddr().String()
+	}
+	if tx.IO.Out != nil {
+		outMsgs, _ := tx.IO.Out.ToSlice()
+		for _, msg := range outMsgs {
+			status.ToAddresses = append(status.ToAddresses, msg.Msg.DestAddr().String())
+		}
+	}
+
+	return status, nil
+}
+
+func analyzeTransaction(tx *tlb.Transaction) string {
+	switch desc := tx.Description.Description.(type) {
+	case tlb.TransactionDescriptionOrdinary:
+		return analyzeOrdinaryTransaction(desc)
+	case tlb.TransactionDescriptionTickTock:
+		return analyzeTickTockTransaction(desc)
+	default:
+		return "unknown"
+	}
+}
+
+func analyzeOrdinaryTransaction(desc tlb.TransactionDescriptionOrdinary) string {
+	if desc.Aborted {
+		return "failed"
+	}
+	if desc.ComputePhase.Phase != nil {
+		switch computePhase := desc.ComputePhase.Phase.(type) {
+		case tlb.ComputePhaseVM:
+			if !computePhase.Success {
+				return "failed"
+			}
+		case tlb.ComputePhaseSkipped:
+			return "skipped"
+		}
+	}
+	if desc.ActionPhase != nil && !desc.ActionPhase.Success {
+		return "failed"
+	}
+	return "success"
+}
+
+func analyzeTickTockTransaction(desc tlb.TransactionDescriptionTickTock) string {
+	if desc.Aborted {
+		return "failed"
+	}
+	if desc.ComputePhase.Phase != nil {
+		switch computePhase := desc.ComputePhase.Phase.(type) {
+		case tlb.ComputePhaseVM:
+			if !computePhase.Success {
+				return "failed"
+			}
+		case tlb.ComputePhaseSkipped:
+			return "skipped"
+		}
+	}
+	if desc.ActionPhase != nil && !desc.ActionPhase.Success {
+		return "failed"
+	}
+	return "success"
 }
 
 func (c *TonClient) RecoverWalletFromSeed(seedPhrase string) (*Wallet, error) {

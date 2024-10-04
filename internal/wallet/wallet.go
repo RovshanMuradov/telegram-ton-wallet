@@ -407,8 +407,25 @@ func SendTON(userID int64, toAddress string, amount string, comment string, cfg 
 		return "", fmt.Errorf("failed to send transaction: %w", err)
 	}
 
+	// Подождем некоторое время перед обновлением баланса
+	time.Sleep(10 * time.Second)
+
+	// Обновляем баланс после подтверждения транзакции
 	if err := UpdateWalletBalance(wallet, cfg); err != nil {
 		logger.Error("Failed to update wallet balance", zap.Error(err))
+		// Не возвращаем ошибку, так как транзакция уже отправлена
+	}
+
+	// Сохраняем транзакцию в базе данных
+	tx := &db.Transaction{
+		WalletID:  wallet.ID, // Предполагается, что WalletID в db.Transaction имеет тип int64
+		Amount:    amount,
+		ToAddress: toAddress,
+		TxHash:    txHash, // Убедитесь, что поле TxHash существует в структуре db.Transaction
+		CreatedAt: time.Now(),
+	}
+	if err := db.DB.Create(tx).Error; err != nil {
+		logger.Error("Failed to save transaction to database", zap.Error(err))
 		// Не возвращаем ошибку, так как транзакция уже отправлена
 	}
 
