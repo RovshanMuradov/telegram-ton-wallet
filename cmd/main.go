@@ -2,7 +2,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,16 +11,18 @@ import (
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/config"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/db"
 	"github.com/rovshanmuradov/telegram-ton-wallet/internal/logging"
+	"go.uber.org/zap"
 )
 
 func main() {
 	// Initialize logging
-	logging.Init()
+	logging.InitLogger()
+	logging.Info("Zap logger initialized and ready to use")
 
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Error loading configuration: %v", err)
+		logging.Fatal("Error loading configuration", zap.Error(err))
 	}
 
 	// Add a small delay before initializing the database
@@ -30,7 +31,7 @@ func main() {
 	// Initialize the database
 	err = db.Init(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("Error connecting to the database: %v", err)
+		logging.Fatal("Error connecting to the database", zap.Error(err))
 	}
 	defer db.Close()
 
@@ -40,15 +41,18 @@ func main() {
 	// Create and start the bot
 	b, err := bot.NewBot(cfg)
 	if err != nil {
-		log.Fatalf("Error creating bot: %v", err)
+		logging.Fatal("Error creating bot", zap.Error(err))
 	}
 
-	b.Start()
+	// Launch the bot in a separate goroutine
+	go b.Start()
 
 	// Wait for termination signal
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
-	log.Println("Shutting down...")
+	// When receiving a signal, call Stop to terminate gracefully
+	logging.Info("Shutting down...")
+	b.Stop()
 }
